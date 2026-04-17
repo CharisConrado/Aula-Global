@@ -10,79 +10,111 @@ import { BookOpen, Star, LogOut, Play } from "lucide-react";
 
 /**
  * Interfaz principal del estudiante.
- * Diseño amigable para niños con TDAH/TEA:
+ *
+ * Los estudiantes no tienen cuenta propia. Esta vista es navegada por el tutor
+ * después de seleccionar un estudiante (setActiveStudentId) y puede ser
+ * proyectada en el dispositivo del estudiante usando el token del tutor.
+ *
+ * Diseño para niños con TDAH/TEA (6-11 años):
  * - Colores suaves, tipografía grande
- * - Botones grandes con iconos
- * - Instrucciones simples
- * - Sin distracciones
+ * - Botones grandes con iconos y poca información simultánea
+ * - Sin distracciones ni elementos superfluos
  */
 export default function EstudiantePage() {
   const router = useRouter();
-  const { token, user, activeSession, setActiveSession, logout } =
-    useSessionStore();
+  const {
+    token,
+    user,
+    active_student_id,
+    activeSession,
+    setActiveSession,
+    logout,
+  } = useSessionStore();
 
   const [subjects, setSubjects] = useState<SubjectResponse[]>([]);
   const [activities, setActivities] = useState<ActivityResponse[]>([]);
-  const [selectedSubject, setSelectedSubject] = useState<number | null>(null);
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [studentName, setStudentName] = useState("");
 
   const loadData = useCallback(async () => {
-    if (!token || !user) return;
+    if (!token || !active_student_id) return;
     try {
-      // Obtener datos del estudiante
-      const student = await api.getStudent(token, user.user_id);
-      setStudentName(student.nombre);
+      // Cargar datos del estudiante activo
+      const student = await api.getStudent(token, active_student_id);
+      setStudentName(student.full_name);
 
-      // Obtener materias del grado del estudiante
-      const subs = await api.getSubjects({
-        degree_id: String(student.grado_id),
-      });
+      // Materias del grado del estudiante
+      const subs = await api.getSubjects({ degree_id: student.id_degree });
       setSubjects(subs);
 
-      // Crear o continuar sesión
+      // Crear sesión si no hay una activa
       if (!activeSession) {
-        const session = await api.createSession(token, user.user_id);
+        const session = await api.createSession(token, {
+          id_student: active_student_id,
+          session_type: "aprendizaje",
+        });
         setActiveSession({
-          id: session.id,
-          student_id: session.student_id,
-          fecha_inicio: session.fecha_inicio,
+          id_session: session.id_session,
+          id_student: session.id_student,
+          start_time: session.start_time,
         });
       }
     } catch (err) {
-      console.error("Error cargando datos:", err);
+      console.error("Error cargando datos del estudiante:", err);
     } finally {
       setLoading(false);
     }
-  }, [token, user, activeSession, setActiveSession]);
+  }, [token, active_student_id, activeSession, setActiveSession]);
 
   useEffect(() => {
-    if (!token || !user || user.rol !== "estudiante") {
+    // Requiere token de tutor/profesional y un estudiante activo seleccionado
+    if (!token || !user) {
       router.replace("/login");
       return;
     }
+    if (!active_student_id) {
+      // No se ha seleccionado un estudiante — volver al panel del tutor
+      router.replace(user.rol === "tutor" ? "/tutor" : "/admin");
+      return;
+    }
     loadData();
-  }, [token, user, router, loadData]);
+  }, [token, user, active_student_id, router, loadData]);
 
-  const loadActivities = async (subjectId: number) => {
+  const loadActivities = async (subjectId: string) => {
     if (!token) return;
     setSelectedSubject(subjectId);
     try {
-      const acts = await api.getActivities(token, {
-        subject_id: String(subjectId),
-      });
+      const acts = await api.getActivities(token, { subject_id: subjectId });
       setActivities(acts);
     } catch (err) {
       console.error("Error cargando actividades:", err);
     }
   };
 
+  const handleExit = async () => {
+    if (activeSession && token) {
+      try {
+        await api.closeSession(token, activeSession.id_session, {
+          status: "completada",
+        });
+      } catch {
+        // Continuar aunque falle el cierre
+      }
+    }
+    setActiveSession(null);
+    // Volver al panel del tutor sin hacer logout
+    router.replace(user?.rol === "tutor" ? "/tutor" : "/admin");
+  };
+
   const handleLogout = async () => {
     if (activeSession && token) {
       try {
-        await api.closeSession(token, activeSession.id, {});
+        await api.closeSession(token, activeSession.id_session, {
+          status: "completada",
+        });
       } catch {
-        // Continuar con logout incluso si falla cerrar sesión
+        // Continuar con logout incluso si falla
       }
     }
     setActiveSession(null);
@@ -126,25 +158,33 @@ export default function EstudiantePage() {
             <Star className="w-8 h-8 text-warm-400" />
             <div>
               <h1 className="text-kid-lg font-bold text-gray-700">
-                ¡Hola, {studentName}!
+                ¡Hola, {studentName || "Estudiante"}!
               </h1>
-              <p className="text-sm text-gray-400">
-                ¿Qué quieres aprender hoy?
-              </p>
+              <p className="text-sm text-gray-400">¿Qué quieres aprender hoy?</p>
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-gray-600 transition-colors rounded-kid hover:bg-gray-100"
-          >
-            <LogOut className="w-5 h-5" />
-            <span className="text-sm">Salir</span>
-          </button>
+
+          <div className="flex items-center gap-2">
+            {/* Botón para que el tutor vuelva a su panel */}
+            <button
+              onClick={handleExit}
+              className="flex items-center gap-2 px-4 py-2 text-primary-500 hover:text-primary-600 transition-colors rounded-kid hover:bg-primary-50 text-sm font-semibold"
+            >
+              ← Volver
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-gray-600 transition-colors rounded-kid hover:bg-gray-100"
+            >
+              <LogOut className="w-5 h-5" />
+              <span className="text-sm">Salir</span>
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
-        {/* Si no hay materia seleccionada, mostrar materias */}
+        {/* Materias */}
         {!selectedSubject ? (
           <section>
             <h2 className="text-kid-xl font-bold text-gray-700 mb-6 text-center">
@@ -154,22 +194,22 @@ export default function EstudiantePage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {subjects.map((subject, index) => (
                 <motion.button
-                  key={subject.id}
+                  key={subject.id_subject}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
-                  onClick={() => loadActivities(subject.id)}
+                  onClick={() => loadActivities(subject.id_subject)}
                   className={`p-8 rounded-kid-lg border-2 bg-gradient-to-br ${
                     subjectColors[index % subjectColors.length]
                   } text-left transition-shadow hover:shadow-lg`}
                 >
                   <span className="text-4xl block mb-3">
-                    {subjectIcons[index % subjectIcons.length]}
+                    {subject.icon || subjectIcons[index % subjectIcons.length]}
                   </span>
                   <h3 className="text-kid-lg font-bold text-gray-700">
-                    {subject.name}
+                    {subject.subject_name}
                   </h3>
                   {subject.description && (
                     <p className="text-sm text-gray-500 mt-1">
@@ -190,7 +230,7 @@ export default function EstudiantePage() {
             </div>
           </section>
         ) : (
-          /* Mostrar actividades de la materia seleccionada */
+          /* Actividades de la materia seleccionada */
           <section>
             <button
               onClick={() => {
@@ -209,7 +249,7 @@ export default function EstudiantePage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               {activities.map((activity, index) => (
                 <motion.div
-                  key={activity.id}
+                  key={activity.id_activity}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.08 }}
@@ -217,44 +257,45 @@ export default function EstudiantePage() {
                 >
                   <div className="flex items-start justify-between mb-3">
                     <h3 className="text-kid-base font-bold text-gray-700">
-                      {activity.titulo}
+                      {activity.title}
                     </h3>
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-bold ${
-                        activity.dificultad === "facil"
+                        activity.difficulty_level === "facil"
                           ? "bg-green-100 text-green-700"
-                          : activity.dificultad === "medio"
+                          : activity.difficulty_level === "medio"
                           ? "bg-yellow-100 text-yellow-700"
                           : "bg-red-100 text-red-700"
                       }`}
                     >
-                      {activity.dificultad === "facil"
+                      {activity.difficulty_level === "facil"
                         ? "Fácil"
-                        : activity.dificultad === "medio"
+                        : activity.difficulty_level === "medio"
                         ? "Normal"
                         : "Difícil"}
                     </span>
                   </div>
 
-                  {activity.descripcion && (
+                  {activity.description && (
                     <p className="text-sm text-gray-500 mb-4">
-                      {activity.descripcion}
+                      {activity.description}
                     </p>
                   )}
 
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 text-sm text-gray-400">
-                      {activity.duracion_estimada && (
-                        <span>⏱ {activity.duracion_estimada} min</span>
+                      {activity.estimated_minutes && (
+                        <span>⏱ {activity.estimated_minutes} min</span>
                       )}
-                      <span>⭐ {activity.puntos} pts</span>
                     </div>
 
                     <motion.button
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={() =>
-                        router.push(`/estudiante/actividad/${activity.id}`)
+                        router.push(
+                          `/estudiante/actividad/${activity.id_activity}`
+                        )
                       }
                       className="flex items-center gap-2 px-5 py-3 bg-primary-400 text-white font-bold rounded-kid hover:bg-primary-500 transition-colors"
                     >

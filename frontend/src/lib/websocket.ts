@@ -1,18 +1,20 @@
 /**
  * Aula Global — Cliente WebSocket para monitoreo en tiempo real
  * Gestiona la conexión, reconexión automática y envío de datos de MediaPipe.
+ *
+ * El `student_id` es ahora un UUID (string), no un entero.
+ * Los campos coinciden exactamente con el schema del backend (MonitoringData).
  */
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
 
+/** Datos que el cliente envía al WebSocket del estudiante */
 export interface MonitoringData {
-  session_id: number;
-  student_id: number;
-  emocion: string;
-  nivel_atencion: number;
+  id_session: string;       // UUID de la sesión activa
+  emotion: string;          // 'neutro' | 'feliz' | 'frustrado' | 'ansioso' | 'distraido' | 'estresado' | 'calmado'
+  attention_level: number;  // 0.0 – 1.0
   stimming: boolean;
-  presion_tactil: number;
-  velocidad_clics: number;
+  tactile_pressure: boolean;
 }
 
 export interface AdaptationAction {
@@ -21,6 +23,7 @@ export interface AdaptationAction {
   datos: Record<string, unknown> | null;
 }
 
+/** Respuesta que devuelve el backend tras procesar los datos de monitoreo */
 export interface MonitoringResponse {
   status: string;
   acciones: AdaptationAction[];
@@ -32,9 +35,12 @@ export interface MonitoringResponse {
 type MessageHandler = (response: MonitoringResponse) => void;
 type ConnectionHandler = (connected: boolean) => void;
 
+/**
+ * WebSocket del estudiante — envía datos de MediaPipe y recibe acciones de adaptación.
+ */
 export class MonitoringWebSocket {
   private ws: WebSocket | null = null;
-  private studentId: number;
+  private studentId: string;      // UUID
   private token: string;
   private onMessage: MessageHandler;
   private onConnection: ConnectionHandler;
@@ -44,7 +50,7 @@ export class MonitoringWebSocket {
   private isClosed = false;
 
   constructor(
-    studentId: number,
+    studentId: string,
     token: string,
     onMessage: MessageHandler,
     onConnection: ConnectionHandler
@@ -72,7 +78,7 @@ export class MonitoringWebSocket {
           const data: MonitoringResponse = JSON.parse(event.data);
           this.onMessage(data);
         } catch {
-          console.error("Error al parsear mensaje WebSocket");
+          console.error("Error al parsear mensaje WebSocket del estudiante");
         }
       };
 
@@ -110,10 +116,8 @@ export class MonitoringWebSocket {
     if (this.reconnectAttempts >= this.maxReconnectAttempts || this.isClosed) {
       return;
     }
-
     this.reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-
     this.reconnectTimeout = setTimeout(() => {
       this.connect();
     }, delay);
@@ -125,11 +129,11 @@ export class MonitoringWebSocket {
 }
 
 /**
- * WebSocket para que el tutor observe el monitoreo de un estudiante.
+ * WebSocket del tutor — observa en tiempo real el monitoreo de un estudiante.
  */
 export class TutorMonitoringWebSocket {
   private ws: WebSocket | null = null;
-  private studentId: number;
+  private studentId: string;     // UUID
   private token: string;
   private onMessage: (data: TutorMonitoringUpdate) => void;
   private onConnection: ConnectionHandler;
@@ -138,7 +142,7 @@ export class TutorMonitoringWebSocket {
   private reconnectAttempts = 0;
 
   constructor(
-    studentId: number,
+    studentId: string,
     token: string,
     onMessage: (data: TutorMonitoringUpdate) => void,
     onConnection: ConnectionHandler
@@ -188,13 +192,13 @@ export class TutorMonitoringWebSocket {
   }
 }
 
+/** Mensaje que envía el backend al WebSocket del tutor (notificación de estado) */
 export interface TutorMonitoringUpdate {
-  type: string;
-  student_id: number;
+  type: string;                     // 'monitoring_update'
+  student_id: string;               // UUID
   emocion: string;
   nivel_atencion: number;
   stimming: boolean;
-  presion_tactil: number;
   acciones: AdaptationAction[];
-  alerta_crisis: string | null;
+  alerta_crisis: string | null;     // 'leve' | 'moderada' | 'grave' | null
 }

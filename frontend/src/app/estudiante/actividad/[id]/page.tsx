@@ -13,16 +13,19 @@ import { ArrowLeft, CheckCircle, HelpCircle, SkipForward } from "lucide-react";
  * Player de actividades para el estudiante.
  * Renderiza distintos tipos de actividad: quiz, arrastrar, completar, etc.
  * Integra el detector de emociones MediaPipe y WebSocket de monitoreo.
+ *
+ * El estudiante no se autentica — esta página es accedida por el tutor
+ * con su propio token, usando `active_student_id` y `activeSession` del store.
  */
 export default function ActividadPage() {
   const router = useRouter();
   const params = useParams();
-  const activityId = Number(params.id);
+  const activityId = String(params.id);   // UUID de la actividad
 
-  const { token, user, activeSession, showCalmingScreen } = useSessionStore();
+  const { token, user, active_student_id, activeSession } = useSessionStore();
 
   const [activity, setActivity] = useState<ActivityResponse | null>(null);
-  const [activityRecordId, setActivityRecordId] = useState<number | null>(null);
+  const [activityRecordId, setActivityRecordId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [completed, setCompleted] = useState(false);
   const [score, setScore] = useState<number | null>(null);
@@ -37,28 +40,31 @@ export default function ActividadPage() {
   const startTimeRef = useRef(Date.now());
 
   const loadActivity = useCallback(async () => {
-    if (!token || !activeSession) return;
+    if (!token || !activeSession || !active_student_id) return;
     try {
       const act = await api.getActivity(token, activityId);
       setActivity(act);
 
-      // Iniciar registro de la actividad en la sesión
-      const record = await api.startActivity(token, activeSession.id, {
-        session_id: activeSession.id,
-        activity_id: activityId,
-        student_id: activeSession.student_id,
+      // Registrar inicio de actividad en la sesión
+      const record = await api.startActivity(token, activeSession.id_session, {
+        id_student:  active_student_id,
+        id_activity: activityId,
       });
-      setActivityRecordId(record.id);
+      setActivityRecordId(record.id_student_activity);
     } catch (err) {
       console.error("Error cargando actividad:", err);
     } finally {
       setLoading(false);
     }
-  }, [token, activeSession, activityId]);
+  }, [token, activeSession, active_student_id, activityId]);
 
   useEffect(() => {
-    if (!token || !user || user.rol !== "estudiante") {
+    if (!token || !user) {
       router.replace("/login");
+      return;
+    }
+    if (!active_student_id) {
+      router.replace(user.rol === "tutor" ? "/tutor" : "/admin");
       return;
     }
     if (!activeSession) {
@@ -66,7 +72,30 @@ export default function ActividadPage() {
       return;
     }
     loadActivity();
-  }, [token, user, activeSession, router, loadActivity]);
+  }, [token, user, active_student_id, activeSession, router, loadActivity]);
+
+  const finishActivity = useCallback(
+    async (nota: number) => {
+      if (!token || !activeSession || !activityRecordId) return;
+      const tiempo = Math.round((Date.now() - startTimeRef.current) / 1000);
+      try {
+        await api.updateActivity(
+          token,
+          activeSession.id_session,
+          activityRecordId,
+          {
+            score:            nota,
+            is_completed:     true,
+            time_spent_sec:   tiempo,
+            achievement_level: nota >= 4 ? "completado" : nota >= 2 ? "completado" : "fallido",
+          }
+        );
+      } catch (err) {
+        console.error("Error al finalizar actividad:", err);
+      }
+    },
+    [token, activeSession, activityRecordId]
+  );
 
   const handleAnswer = async (answerIndex: number) => {
     if (showFeedback) return;
@@ -76,18 +105,17 @@ export default function ActividadPage() {
     const newAnswers = [...answers, answerIndex];
     setAnswers(newAnswers);
 
-    // Esperar 1.5 segundos mostrando retroalimentación
     setTimeout(() => {
       setShowFeedback(false);
       setSelectedAnswer(null);
 
-      const content = activity?.contenido_json;
+      const content = activity?.content;
       const questions = (content?.preguntas as QuizQuestion[]) || [];
 
       if (currentQuestion + 1 < questions.length) {
         setCurrentQuestion(currentQuestion + 1);
       } else {
-        // Actividad completada — calcular nota
+        // Calcular nota sobre 5
         const correct = newAnswers.filter(
           (a, i) => a === questions[i]?.respuesta_correcta
         ).length;
@@ -97,20 +125,6 @@ export default function ActividadPage() {
         finishActivity(nota);
       }
     }, 1500);
-  };
-
-  const finishActivity = async (nota: number) => {
-    if (!token || !activeSession || !activityRecordId) return;
-    const tiempo = Math.round((Date.now() - startTimeRef.current) / 1000);
-    try {
-      await api.updateActivity(token, activeSession.id, activityRecordId, {
-        nota,
-        completada: true,
-        tiempo_dedicado: tiempo,
-      });
-    } catch (err) {
-      console.error("Error al finalizar actividad:", err);
-    }
   };
 
   if (loading || !activity) {
@@ -127,7 +141,7 @@ export default function ActividadPage() {
     );
   }
 
-  const content = activity.contenido_json;
+  const content = activity.content;
   const questions = (content?.preguntas as QuizQuestion[]) || [];
   const currentQ = questions[currentQuestion];
 
@@ -135,7 +149,7 @@ export default function ActividadPage() {
     <div className="min-h-screen bg-gradient-to-br from-soft-blue via-white to-soft-purple">
       <CalmingScreen />
 
-      {/* Detector de emociones (invisible, corre en background) */}
+      {/* Detector de emociones — invisible, corre en background */}
       <EmotionDetector />
 
       {/* Header */}
@@ -150,7 +164,7 @@ export default function ActividadPage() {
           </button>
 
           <h1 className="text-kid-base font-bold text-gray-700">
-            {activity.titulo}
+            {activity.title}
           </h1>
 
           {/* Barra de progreso */}
@@ -213,27 +227,24 @@ export default function ActividadPage() {
               </div>
             )}
 
-            <div className="flex gap-4 justify-center">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => router.push("/estudiante")}
-                className="btn-kid-primary"
-              >
-                <CheckCircle className="w-6 h-6 inline mr-2" />
-                Seguir aprendiendo
-              </motion.button>
-            </div>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => router.push("/estudiante")}
+              className="btn-kid-primary"
+            >
+              <CheckCircle className="w-6 h-6 inline mr-2" />
+              Seguir aprendiendo
+            </motion.button>
           </motion.div>
         ) : questions.length > 0 && currentQ ? (
-          /* Renderizar quiz */
+          /* Quiz */
           <motion.div
             key={currentQuestion}
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.3 }}
           >
-            {/* Pregunta */}
             <div className="card-kid mb-6">
               <p className="text-kid-lg font-bold text-gray-700 text-center">
                 {currentQ.pregunta}
@@ -250,14 +261,14 @@ export default function ActividadPage() {
               )}
             </div>
 
-            {/* Opciones */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {currentQ.opciones?.map((option: string, index: number) => {
                 const isSelected = selectedAnswer === index;
                 const isCorrect = index === currentQ.respuesta_correcta;
                 const showResult = showFeedback;
 
-                let bgClass = "bg-white border-gray-200 hover:border-primary-300 hover:bg-primary-50";
+                let bgClass =
+                  "bg-white border-gray-200 hover:border-primary-300 hover:bg-primary-50";
                 if (showResult && isSelected && isCorrect) {
                   bgClass = "bg-green-50 border-green-400";
                 } else if (showResult && isSelected && !isCorrect) {
@@ -295,7 +306,6 @@ export default function ActividadPage() {
               })}
             </div>
 
-            {/* Botones de ayuda */}
             <div className="flex justify-center gap-4 mt-8">
               {!showHint && currentQ.pista && (
                 <button
@@ -303,7 +313,9 @@ export default function ActividadPage() {
                   className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-primary-500 transition-colors"
                 >
                   <HelpCircle className="w-5 h-5" />
-                  <span className="text-sm font-semibold">Necesito una pista</span>
+                  <span className="text-sm font-semibold">
+                    Necesito una pista
+                  </span>
                 </button>
               )}
               <button
@@ -316,10 +328,10 @@ export default function ActividadPage() {
             </div>
           </motion.div>
         ) : (
-          /* Actividad sin contenido de quiz — mostrar contenido genérico */
+          /* Actividad sin quiz — contenido genérico */
           <div className="card-kid text-center py-12">
             <p className="text-kid-lg text-gray-500 mb-6">
-              {activity.descripcion || "Actividad en preparación"}
+              {activity.description || "Actividad en preparación"}
             </p>
             <button
               onClick={() => {

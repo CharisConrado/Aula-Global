@@ -7,23 +7,33 @@ import { useSessionStore } from "@/store/sessionStore";
 import {
   api,
   type StudentResponse,
-  type SessionResponse,
   type CrisisResponse,
 } from "@/lib/api";
 import {
   TutorMonitoringWebSocket,
   type TutorMonitoringUpdate,
 } from "@/lib/websocket";
-import { Users, Activity, AlertTriangle, LogOut, Eye, Plus } from "lucide-react";
+import {
+  Users,
+  Activity,
+  AlertTriangle,
+  LogOut,
+  Eye,
+  Plus,
+  Play,
+} from "lucide-react";
 
-const EMOTION_LABELS: Record<string, { label: string; color: string; emoji: string }> = {
-  neutro:    { label: "Tranquilo",   color: "bg-gray-100 text-gray-600",    emoji: "😐" },
-  feliz:     { label: "Feliz",       color: "bg-green-100 text-green-700",  emoji: "😄" },
-  frustrado: { label: "Frustrado",   color: "bg-orange-100 text-orange-700",emoji: "😤" },
-  ansioso:   { label: "Ansioso",     color: "bg-yellow-100 text-yellow-700",emoji: "😰" },
-  distraido: { label: "Distraído",   color: "bg-blue-100 text-blue-700",    emoji: "😶‍🌫️" },
-  estresado: { label: "Estresado",   color: "bg-red-100 text-red-700",      emoji: "😟" },
-  calmado:   { label: "Calmado",     color: "bg-teal-100 text-teal-700",    emoji: "😌" },
+const EMOTION_LABELS: Record<
+  string,
+  { label: string; color: string; emoji: string }
+> = {
+  neutro:    { label: "Tranquilo",  color: "bg-gray-100 text-gray-600",     emoji: "😐" },
+  feliz:     { label: "Feliz",      color: "bg-green-100 text-green-700",   emoji: "😄" },
+  frustrado: { label: "Frustrado",  color: "bg-orange-100 text-orange-700", emoji: "😤" },
+  ansioso:   { label: "Ansioso",    color: "bg-yellow-100 text-yellow-700", emoji: "😰" },
+  distraido: { label: "Distraído",  color: "bg-blue-100 text-blue-700",     emoji: "😶‍🌫️" },
+  estresado: { label: "Estresado",  color: "bg-red-100 text-red-700",       emoji: "😟" },
+  calmado:   { label: "Calmado",    color: "bg-teal-100 text-teal-700",     emoji: "😌" },
 };
 
 const CRISIS_COLORS: Record<string, string> = {
@@ -42,15 +52,20 @@ interface StudentMonitorState {
 
 export default function TutorPage() {
   const router = useRouter();
-  const { token, user, logout } = useSessionStore();
+  const { token, user, logout, setActiveStudentId } = useSessionStore();
 
-  const [students, setStudents]     = useState<StudentResponse[]>([]);
-  const [sessions, setSessions]     = useState<Record<number, SessionResponse[]>>({});
+  const [students, setStudents]         = useState<StudentResponse[]>([]);
   const [activeCrisis, setActiveCrisis] = useState<CrisisResponse[]>([]);
-  const [monitorStates, setMonitorStates] = useState<Record<number, StudentMonitorState>>({});
-  const [wsConnections, setWsConnections] = useState<Record<number, TutorMonitoringWebSocket>>({});
-  const [loading, setLoading]       = useState(true);
-  const [tab, setTab]               = useState<"estudiantes" | "crisis" | "historial">("estudiantes");
+  const [monitorStates, setMonitorStates] = useState<
+    Record<string, StudentMonitorState>
+  >({});
+  const [wsConnections, setWsConnections] = useState<
+    Record<string, TutorMonitoringWebSocket>
+  >({});
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"estudiantes" | "crisis" | "historial">(
+    "estudiantes"
+  );
 
   const loadData = useCallback(async () => {
     if (!token) return;
@@ -61,19 +76,6 @@ export default function TutorPage() {
       ]);
       setStudents(studs);
       setActiveCrisis(crisis);
-
-      // Cargar sesiones recientes de cada estudiante
-      const sessionMap: Record<number, SessionResponse[]> = {};
-      await Promise.all(
-        studs.map(async (s) => {
-          const sess = await api.getSessions(token, {
-            student_id: String(s.id),
-            limit: "5",
-          });
-          sessionMap[s.id] = sess;
-        })
-      );
-      setSessions(sessionMap);
     } catch (err) {
       console.error("Error cargando datos del tutor:", err);
     } finally {
@@ -93,16 +95,16 @@ export default function TutorPage() {
   useEffect(() => {
     if (!token || students.length === 0) return;
 
-    const newWs: Record<number, TutorMonitoringWebSocket> = {};
+    const newWs: Record<string, TutorMonitoringWebSocket> = {};
 
     students.forEach((student) => {
       const ws = new TutorMonitoringWebSocket(
-        student.id,
+        student.id_student,
         token,
         (data: TutorMonitoringUpdate) => {
           setMonitorStates((prev) => ({
             ...prev,
-            [student.id]: {
+            [student.id_student]: {
               emocion: data.emocion,
               nivel_atencion: data.nivel_atencion,
               stimming: data.stimming,
@@ -111,25 +113,45 @@ export default function TutorPage() {
             },
           }));
 
-          // Refrescar crisis si hay alerta
           if (data.alerta_crisis) {
-            api.getActiveCrisis(token).then(setActiveCrisis).catch(() => {});
+            api
+              .getActiveCrisis(token)
+              .then(setActiveCrisis)
+              .catch(() => {});
           }
         },
         (connected) => {
           if (connected) {
             setMonitorStates((prev) => ({
               ...prev,
-              [student.id]: {
-                ...(prev[student.id] || { emocion: "neutro", nivel_atencion: 0.5, stimming: false, alerta_crisis: null }),
+              [student.id_student]: {
+                ...(prev[student.id_student] || {
+                  emocion: "neutro",
+                  nivel_atencion: 0.5,
+                  stimming: false,
+                  alerta_crisis: null,
+                }),
                 online: true,
+              },
+            }));
+          } else {
+            setMonitorStates((prev) => ({
+              ...prev,
+              [student.id_student]: {
+                ...(prev[student.id_student] || {
+                  emocion: "neutro",
+                  nivel_atencion: 0,
+                  stimming: false,
+                  alerta_crisis: null,
+                }),
+                online: false,
               },
             }));
           }
         }
       );
       ws.connect();
-      newWs[student.id] = ws;
+      newWs[student.id_student] = ws;
     });
 
     setWsConnections(newWs);
@@ -145,22 +167,40 @@ export default function TutorPage() {
     router.replace("/login");
   };
 
-  const handleResolveCrisis = async (crisisId: number) => {
+  /** Selecciona el estudiante activo y navega a la vista del estudiante */
+  const handleIniciarSesion = (studentId: string) => {
+    setActiveStudentId(studentId);
+    router.push("/estudiante");
+  };
+
+  const handleResolveCrisis = async (crisisId: string) => {
     if (!token) return;
     try {
       await api.resolveCrisis(token, crisisId, {
-        resolucion: "Resuelto por tutor desde el dashboard",
+        was_effective: true,
+        notes: "Resuelto por tutor desde el dashboard",
       });
-      setActiveCrisis((prev) => prev.filter((c) => c.id !== crisisId));
+      setActiveCrisis((prev) =>
+        prev.filter((c) => c.id_crisis !== crisisId)
+      );
     } catch (err) {
       console.error("Error al resolver crisis:", err);
     }
   };
 
+  /** Formatea duración en segundos a texto legible */
+  const formatDuration = (secs: number | null) => {
+    if (!secs) return null;
+    const m = Math.floor(secs / 60);
+    return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <p className="text-gray-400 text-lg animate-pulse">Cargando dashboard...</p>
+        <p className="text-gray-400 text-lg animate-pulse">
+          Cargando dashboard...
+        </p>
       </div>
     );
   }
@@ -172,11 +212,12 @@ export default function TutorPage() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">Aula Global</h1>
-            <p className="text-sm text-gray-400">Panel del Tutor</p>
+            <p className="text-sm text-gray-400">
+              Panel del Tutor — {user?.email}
+            </p>
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Alerta de crisis */}
             {activeCrisis.length > 0 && (
               <motion.div
                 animate={{ scale: [1, 1.05, 1] }}
@@ -186,7 +227,8 @@ export default function TutorPage() {
               >
                 <AlertTriangle className="w-4 h-4" />
                 <span className="font-semibold text-sm">
-                  {activeCrisis.length} crisis activa{activeCrisis.length > 1 ? "s" : ""}
+                  {activeCrisis.length} crisis activa
+                  {activeCrisis.length > 1 ? "s" : ""}
                 </span>
               </motion.div>
             )}
@@ -215,14 +257,18 @@ export default function TutorPage() {
                   : "border-transparent text-gray-400 hover:text-gray-600"
               }`}
             >
-              {t === "estudiantes" ? "Mis Estudiantes" : t === "crisis" ? `Crisis (${activeCrisis.length})` : "Historial"}
+              {t === "estudiantes"
+                ? "Mis Estudiantes"
+                : t === "crisis"
+                ? `Crisis (${activeCrisis.length})`
+                : "Historial"}
             </button>
           ))}
         </div>
       </div>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Tab: Estudiantes */}
+        {/* ── Tab: Estudiantes ── */}
         {tab === "estudiantes" && (
           <div>
             <div className="flex items-center justify-between mb-6">
@@ -241,13 +287,14 @@ export default function TutorPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {students.map((student) => {
-                const state = monitorStates[student.id];
-                const emotionInfo = EMOTION_LABELS[state?.emocion || "neutro"] || EMOTION_LABELS.neutro;
-                const lastSession = sessions[student.id]?.[0];
+                const state = monitorStates[student.id_student];
+                const emotionInfo =
+                  EMOTION_LABELS[state?.emocion || "neutro"] ||
+                  EMOTION_LABELS.neutro;
 
                 return (
                   <motion.div
-                    key={student.id}
+                    key={student.id_student}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-shadow"
@@ -256,33 +303,48 @@ export default function TutorPage() {
                     <div className="flex items-start justify-between mb-4">
                       <div>
                         <h3 className="text-lg font-bold text-gray-800">
-                          {student.nombre} {student.apellido}
+                          {student.full_name}
                         </h3>
-                        <p className="text-sm text-gray-400">@{student.username}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          Estado:{" "}
+                          <span
+                            className={
+                              student.account_status === "activo"
+                                ? "text-green-600"
+                                : "text-red-500"
+                            }
+                          >
+                            {student.account_status}
+                          </span>
+                        </p>
                       </div>
                       <span
-                        className={`w-3 h-3 rounded-full mt-1 ${
+                        className={`w-3 h-3 rounded-full mt-1 flex-shrink-0 ${
                           state?.online ? "bg-green-400" : "bg-gray-300"
                         }`}
                         title={state?.online ? "En línea" : "Desconectado"}
                       />
                     </div>
 
-                    {/* Estado emocional actual */}
+                    {/* Estado emocional en tiempo real */}
                     {state?.online ? (
                       <div className="mb-4">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs text-gray-400 font-semibold uppercase tracking-wide">
                             Estado actual
                           </span>
-                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${emotionInfo.color}`}>
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-bold ${emotionInfo.color}`}
+                          >
                             {emotionInfo.emoji} {emotionInfo.label}
                           </span>
                         </div>
 
                         {/* Barra de atención */}
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-400 w-16">Atención</span>
+                          <span className="text-xs text-gray-400 w-16">
+                            Atención
+                          </span>
                           <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
                             <motion.div
                               className={`h-full rounded-full ${
@@ -292,7 +354,9 @@ export default function TutorPage() {
                                   ? "bg-yellow-400"
                                   : "bg-red-400"
                               }`}
-                              animate={{ width: `${(state?.nivel_atencion || 0) * 100}%` }}
+                              animate={{
+                                width: `${(state?.nivel_atencion || 0) * 100}%`,
+                              }}
                             />
                           </div>
                           <span className="text-xs text-gray-500 w-8">
@@ -309,7 +373,8 @@ export default function TutorPage() {
                         {state?.alerta_crisis && (
                           <div
                             className={`mt-2 px-2 py-1 rounded border text-xs font-bold ${
-                              CRISIS_COLORS[state.alerta_crisis] || CRISIS_COLORS.leve
+                              CRISIS_COLORS[state.alerta_crisis] ||
+                              CRISIS_COLORS.leve
                             }`}
                           >
                             🚨 Crisis {state.alerta_crisis}
@@ -317,37 +382,33 @@ export default function TutorPage() {
                         )}
                       </div>
                     ) : (
-                      <p className="text-sm text-gray-400 mb-4">Sin sesión activa</p>
-                    )}
-
-                    {/* Última sesión */}
-                    {lastSession && (
-                      <div className="border-t border-gray-100 pt-3 mb-4">
-                        <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mb-1">
-                          Última sesión
-                        </p>
-                        <div className="flex gap-3 text-xs text-gray-500">
-                          {lastSession.nota_cuantitativa !== null && (
-                            <span>⭐ {lastSession.nota_cuantitativa}/5</span>
-                          )}
-                          <span>📚 {lastSession.actividades_completadas} actividades</span>
-                          {lastSession.crisis_ocurridas > 0 && (
-                            <span className="text-orange-500">
-                              ⚠ {lastSession.crisis_ocurridas} crisis
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                      <p className="text-sm text-gray-400 mb-4">
+                        Sin sesión activa
+                      </p>
                     )}
 
                     {/* Acciones */}
-                    <button
-                      onClick={() => router.push(`/tutor/estudiante/${student.id}`)}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
-                    >
-                      <Eye className="w-4 h-4" />
-                      Ver perfil completo
-                    </button>
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() =>
+                          router.push(`/tutor/estudiante/${student.id_student}`)
+                        }
+                        className="flex-1 flex items-center justify-center gap-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                      >
+                        <Eye className="w-4 h-4" />
+                        Perfil
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          handleIniciarSesion(student.id_student)
+                        }
+                        className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-primary-500 text-white rounded-lg text-sm font-semibold hover:bg-primary-600 transition-colors"
+                      >
+                        <Play className="w-4 h-4" />
+                        Iniciar sesión
+                      </button>
+                    </div>
                   </motion.div>
                 );
               })}
@@ -370,7 +431,7 @@ export default function TutorPage() {
           </div>
         )}
 
-        {/* Tab: Crisis */}
+        {/* ── Tab: Crisis ── */}
         {tab === "crisis" && (
           <div>
             <h2 className="text-xl font-bold text-gray-700 mb-6">
@@ -385,55 +446,79 @@ export default function TutorPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {activeCrisis.map((crisis) => (
-                  <motion.div
-                    key={crisis.id}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className={`p-5 rounded-xl border-2 ${CRISIS_COLORS[crisis.nivel]}`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-bold text-lg capitalize">
-                            Crisis {crisis.nivel}
-                          </span>
-                          {crisis.emocion_detectada && (
-                            <span className="text-sm opacity-75">
-                              — {EMOTION_LABELS[crisis.emocion_detectada]?.emoji || ""}
-                              {crisis.emocion_detectada}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm opacity-75">{crisis.descripcion}</p>
-                        <p className="text-xs opacity-60 mt-1">
-                          {new Date(crisis.fecha_inicio).toLocaleString("es-CO")}
-                        </p>
-                      </div>
+                {activeCrisis.map((crisis) => {
+                  // Determinar nivel de gravedad a partir del notes o un mapeo por tipo
+                  const nivelLabel =
+                    crisis.notes?.includes("grave")
+                      ? "grave"
+                      : crisis.notes?.includes("moderada")
+                      ? "moderada"
+                      : "leve";
 
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => router.push(`/tutor/estudiante/${crisis.student_id}`)}
-                          className="px-3 py-2 bg-white/60 rounded-lg text-sm font-semibold hover:bg-white/80 transition-colors"
-                        >
-                          Ver estudiante
-                        </button>
-                        <button
-                          onClick={() => handleResolveCrisis(crisis.id)}
-                          className="px-3 py-2 bg-white rounded-lg text-sm font-semibold shadow hover:shadow-md transition-shadow"
-                        >
-                          Resolver
-                        </button>
+                  return (
+                    <motion.div
+                      key={crisis.id_crisis}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className={`p-5 rounded-xl border-2 ${
+                        CRISIS_COLORS[nivelLabel]
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-bold text-lg capitalize">
+                              Crisis {nivelLabel}
+                            </span>
+                          </div>
+                          {crisis.notes && (
+                            <p className="text-sm opacity-75">{crisis.notes}</p>
+                          )}
+                          <p className="text-xs opacity-60 mt-1">
+                            {crisis.detection_timestamp
+                              ? new Date(
+                                  crisis.detection_timestamp
+                                ).toLocaleString("es-CO")
+                              : "—"}
+                          </p>
+                          <p className="text-xs opacity-60">
+                            Requiere humano:{" "}
+                            <strong>
+                              {crisis.required_human ? "Sí" : "No"}
+                            </strong>
+                          </p>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() =>
+                              router.push(
+                                `/tutor/estudiante/${crisis.id_student}`
+                              )
+                            }
+                            className="px-3 py-2 bg-white/60 rounded-lg text-sm font-semibold hover:bg-white/80 transition-colors"
+                          >
+                            Ver estudiante
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleResolveCrisis(crisis.id_crisis)
+                            }
+                            className="px-3 py-2 bg-white rounded-lg text-sm font-semibold shadow hover:shadow-md transition-shadow"
+                          >
+                            Resolver
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
           </div>
         )}
 
-        {/* Tab: Historial */}
+        {/* ── Tab: Historial ── */}
         {tab === "historial" && (
           <div>
             <h2 className="text-xl font-bold text-gray-700 mb-6">
@@ -441,67 +526,37 @@ export default function TutorPage() {
               Historial de Sesiones
             </h2>
 
-            <div className="space-y-6">
-              {students.map((student) => {
-                const studentSessions = sessions[student.id] || [];
-                if (studentSessions.length === 0) return null;
-
-                return (
-                  <div key={student.id}>
-                    <h3 className="font-bold text-gray-600 mb-3">
-                      {student.nombre} {student.apellido}
+            <div className="space-y-4">
+              {students.map((student) => (
+                <div
+                  key={student.id_student}
+                  className="bg-white rounded-xl border border-gray-200 p-5"
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-gray-800">
+                      {student.full_name}
                     </h3>
-                    <div className="space-y-2">
-                      {studentSessions.map((session) => (
-                        <div
-                          key={session.id}
-                          className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between"
-                        >
-                          <div>
-                            <p className="text-sm font-semibold text-gray-700">
-                              {new Date(session.fecha_inicio).toLocaleDateString("es-CO", {
-                                weekday: "long",
-                                day: "numeric",
-                                month: "long",
-                              })}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-1">
-                              {session.duracion_total
-                                ? `${Math.round(session.duracion_total / 60)} min`
-                                : "En progreso"}
-                            </p>
-                          </div>
-
-                          <div className="flex gap-4 text-sm">
-                            {session.nota_cuantitativa !== null && (
-                              <div className="text-center">
-                                <p className="font-bold text-lg text-primary-600">
-                                  {session.nota_cuantitativa}
-                                </p>
-                                <p className="text-xs text-gray-400">nota</p>
-                              </div>
-                            )}
-                            <div className="text-center">
-                              <p className="font-bold text-lg text-gray-700">
-                                {session.actividades_completadas}
-                              </p>
-                              <p className="text-xs text-gray-400">actividades</p>
-                            </div>
-                            {session.crisis_ocurridas > 0 && (
-                              <div className="text-center">
-                                <p className="font-bold text-lg text-orange-500">
-                                  {session.crisis_ocurridas}
-                                </p>
-                                <p className="text-xs text-gray-400">crisis</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <button
+                      onClick={() =>
+                        router.push(`/tutor/estudiante/${student.id_student}`)
+                      }
+                      className="text-sm text-primary-500 hover:text-primary-600 font-semibold"
+                    >
+                      Ver historial completo →
+                    </button>
                   </div>
-                );
-              })}
+                  <p className="text-sm text-gray-400 mt-1">
+                    Accede al perfil del estudiante para ver el historial
+                    detallado de sesiones y actividades.
+                  </p>
+                </div>
+              ))}
+
+              {students.length === 0 && (
+                <div className="text-center py-16 text-gray-400">
+                  No hay estudiantes registrados
+                </div>
+              )}
             </div>
           </div>
         )}

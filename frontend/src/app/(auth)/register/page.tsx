@@ -4,12 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { useSessionStore } from "@/store/sessionStore";
-import { api } from "@/lib/api";
+import { useSessionStore, type User } from "@/store/sessionStore";
+import { api as apiClient } from "@/lib/api";
 
 const ROLES = [
-  { value: "tutor", label: "Tutor / Familiar", icon: "👨‍👩‍👧" },
-  { value: "profesional", label: "Profesional", icon: "🩺" },
+  { value: "tutor",       label: "Tutor / Familiar",  icon: "👨‍👩‍👧" },
+  { value: "profesional", label: "Profesional",        icon: "🩺" },
 ];
 
 export default function RegisterPage() {
@@ -17,12 +17,15 @@ export default function RegisterPage() {
   const { setAuth } = useSessionStore();
 
   const [form, setForm] = useState({
-    nombre: "",
-    apellido: "",
+    full_name: "",
     email: "",
     password: "",
     confirmPassword: "",
     rol: "tutor",
+    // Campos opcionales según el rol
+    phone: "",
+    specialty: "",       // solo profesional
+    relationship_type: "familiar",   // valores válidos: familiar | cuidador | profesional_externo
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -39,33 +42,48 @@ export default function RegisterPage() {
       setError("Las contraseñas no coinciden");
       return;
     }
-
     if (form.password.length < 6) {
       setError("La contraseña debe tener al menos 6 caracteres");
+      return;
+    }
+    if (!form.full_name.trim()) {
+      setError("El nombre es obligatorio");
       return;
     }
 
     setLoading(true);
 
     try {
-      const res = await api.register({
-        email: form.email,
-        password: form.password,
-        nombre: form.nombre,
-        apellido: form.apellido,
-        rol: form.rol,
-      });
+      let res: { access_token: string; token_type: string; rol: string; user_id: string };
+
+      if (form.rol === "tutor") {
+        res = await apiClient.registerTutor({
+          email:             form.email,
+          password:          form.password,
+          full_name:         form.full_name.trim(),
+          phone:             form.phone || undefined,
+          relationship_type: form.relationship_type || undefined,
+        });
+      } else {
+        res = await apiClient.registerProfessional({
+          email:      form.email,
+          password:   form.password,
+          full_name:  form.full_name.trim(),
+          speciality: form.specialty || undefined,
+          phone:      form.phone || undefined,
+        });
+      }
 
       setAuth(res.access_token, {
         user_id: res.user_id,
-        email: form.email,
-        rol: res.rol as "estudiante" | "tutor" | "profesional" | "admin",
+        email:   form.email,
+        rol:     res.rol as User["rol"],
       });
 
       const routes: Record<string, string> = {
-        tutor: "/tutor",
-        profesional: "/admin",
-        admin: "/admin",
+        tutor:        "/tutor",
+        profesional:  "/admin",
+        admin:        "/admin",
       };
       router.push(routes[res.rol] || "/");
     } catch (err) {
@@ -92,7 +110,7 @@ export default function RegisterPage() {
 
         <div className="card-kid">
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Selección de rol */}
+            {/* Tipo de cuenta */}
             <div>
               <label className="block text-sm font-semibold text-gray-600 mb-3">
                 Tipo de cuenta
@@ -116,43 +134,26 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label
-                  htmlFor="nombre"
-                  className="block text-sm font-semibold text-gray-600 mb-2"
-                >
-                  Nombre
-                </label>
-                <input
-                  id="nombre"
-                  type="text"
-                  value={form.nombre}
-                  onChange={(e) => updateField("nombre", e.target.value)}
-                  className="input-kid"
-                  placeholder="María"
-                  required
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="apellido"
-                  className="block text-sm font-semibold text-gray-600 mb-2"
-                >
-                  Apellido
-                </label>
-                <input
-                  id="apellido"
-                  type="text"
-                  value={form.apellido}
-                  onChange={(e) => updateField("apellido", e.target.value)}
-                  className="input-kid"
-                  placeholder="García"
-                  required
-                />
-              </div>
+            {/* Nombre completo */}
+            <div>
+              <label
+                htmlFor="full_name"
+                className="block text-sm font-semibold text-gray-600 mb-2"
+              >
+                Nombre completo
+              </label>
+              <input
+                id="full_name"
+                type="text"
+                value={form.full_name}
+                onChange={(e) => updateField("full_name", e.target.value)}
+                className="input-kid"
+                placeholder="María García López"
+                required
+              />
             </div>
 
+            {/* Email */}
             <div>
               <label
                 htmlFor="email"
@@ -172,6 +173,68 @@ export default function RegisterPage() {
               />
             </div>
 
+            {/* Teléfono (opcional) */}
+            <div>
+              <label
+                htmlFor="phone"
+                className="block text-sm font-semibold text-gray-600 mb-2"
+              >
+                Teléfono{" "}
+                <span className="font-normal text-gray-400">(opcional)</span>
+              </label>
+              <input
+                id="phone"
+                type="tel"
+                value={form.phone}
+                onChange={(e) => updateField("phone", e.target.value)}
+                className="input-kid"
+                placeholder="+57 300 000 0000"
+              />
+            </div>
+
+            {/* Campo específico según rol */}
+            {form.rol === "profesional" ? (
+              <div>
+                <label
+                  htmlFor="specialty"
+                  className="block text-sm font-semibold text-gray-600 mb-2"
+                >
+                  Especialidad{" "}
+                  <span className="font-normal text-gray-400">(opcional)</span>
+                </label>
+                <input
+                  id="specialty"
+                  type="text"
+                  value={form.specialty}
+                  onChange={(e) => updateField("specialty", e.target.value)}
+                  className="input-kid"
+                  placeholder="Psicología, Fonoaudiología, etc."
+                />
+              </div>
+            ) : (
+              <div>
+                <label
+                  htmlFor="relationship_type"
+                  className="block text-sm font-semibold text-gray-600 mb-2"
+                >
+                  Relación con el estudiante
+                </label>
+                <select
+                  id="relationship_type"
+                  value={form.relationship_type}
+                  onChange={(e) =>
+                    updateField("relationship_type", e.target.value)
+                  }
+                  className="input-kid"
+                >
+                  <option value="familiar">Familiar (padre, madre, hermano…)</option>
+                  <option value="cuidador">Cuidador / Docente</option>
+                  <option value="profesional_externo">Profesional externo</option>
+                </select>
+              </div>
+            )}
+
+            {/* Contraseña */}
             <div>
               <label
                 htmlFor="password"

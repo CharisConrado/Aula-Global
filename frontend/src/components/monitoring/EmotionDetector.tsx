@@ -9,18 +9,21 @@ import {
 } from "@/lib/websocket";
 
 /**
- * EmotionDetector — Componente de detección de emociones con MediaPipe
+ * EmotionDetector — Detección de emociones con MediaPipe FaceMesh
  *
- * - Ejecuta FaceMesh de MediaPipe 100% en el navegador
- * - El video NUNCA sale del dispositivo — solo se envían landmarks procesados
+ * - Ejecuta FaceMesh 100% en el navegador — el video NUNCA sale del dispositivo
+ * - Solo se envían landmarks procesados al backend via WebSocket
  * - Analiza landmarks faciales para inferir emoción, atención y stimming
- * - Envía datos al backend via WebSocket cada 2 segundos
- * - Si la cámara falla, el sistema continúa funcionando sin monitoreo
+ * - Envía datos cada 2 segundos
+ * - Si la cámara no está disponible, el sistema continúa sin monitoreo facial
+ *
+ * El WebSocket se abre con el `active_student_id` del store (UUID del estudiante),
+ * usando el token del tutor autenticado.
  */
 export default function EmotionDetector() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const wsRef = useRef<MonitoringWebSocket | null>(null);
+  const videoRef   = useRef<HTMLVideoElement>(null);
+  const canvasRef  = useRef<HTMLCanvasElement>(null);
+  const wsRef      = useRef<MonitoringWebSocket | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const faceMeshRef = useRef<unknown>(null);
   const lastLandmarksRef = useRef<unknown>(null);
@@ -29,6 +32,7 @@ export default function EmotionDetector() {
   const {
     token,
     user,
+    active_student_id,
     activeSession,
     setEmotionState,
     addCrisisAlert,
@@ -36,141 +40,112 @@ export default function EmotionDetector() {
     setShowCalmingScreen,
   } = useSessionStore();
 
-  // Rastrear clics para medir presión táctil
+  // Rastrear clics/toques para detectar presión táctil alta
   useEffect(() => {
-    const handleClick = () => {
+    const handleInput = () => {
       const now = Date.now();
       clickTimestampsRef.current.push(now);
       // Mantener solo los últimos 10 segundos
       clickTimestampsRef.current = clickTimestampsRef.current.filter(
-        (t) => now - t < 10000
+        (t) => now - t < 10_000
       );
     };
-
-    document.addEventListener("click", handleClick);
-    document.addEventListener("touchstart", handleClick);
+    document.addEventListener("click", handleInput);
+    document.addEventListener("touchstart", handleInput);
     return () => {
-      document.removeEventListener("click", handleClick);
-      document.removeEventListener("touchstart", handleClick);
+      document.removeEventListener("click", handleInput);
+      document.removeEventListener("touchstart", handleInput);
     };
   }, []);
 
-  // Calcular velocidad de clics (clics por segundo en ventana de 10s)
   const getClickSpeed = useCallback(() => {
     const now = Date.now();
-    const recent = clickTimestampsRef.current.filter(
-      (t) => now - t < 10000
-    );
-    return recent.length / 10;
+    const recent = clickTimestampsRef.current.filter((t) => now - t < 10_000);
+    return recent.length / 10; // clics por segundo
   }, []);
 
-  // Analizar landmarks para inferir emoción
+  // Analizar landmarks de FaceMesh para inferir emoción, atención, stimming
   const analyzeLandmarks = useCallback(
     (landmarks: { x: number; y: number; z: number }[]) => {
       if (!landmarks || landmarks.length < 468) {
-        return { emocion: "neutro", nivel_atencion: 0.5, stimming: false };
+        return { emotion: "neutro", attention_level: 0.5, stimming: false };
       }
 
-      // --- Análisis de apertura de boca (sorpresa/frustración) ---
-      const upperLip = landmarks[13];
-      const lowerLip = landmarks[14];
-      const mouthOpen = Math.abs(upperLip.y - lowerLip.y);
+      const upperLip   = landmarks[13];
+      const lowerLip   = landmarks[14];
+      const mouthOpen  = Math.abs(upperLip.y - lowerLip.y);
 
-      // --- Análisis de cejas (frustración/estrés) ---
-      const leftBrow = landmarks[70];
-      const rightBrow = landmarks[300];
-      const leftEye = landmarks[159];
-      const rightEye = landmarks[386];
-      const browDistance =
+      const leftBrow   = landmarks[70];
+      const rightBrow  = landmarks[300];
+      const leftEye    = landmarks[159];
+      const rightEye   = landmarks[386];
+      const browDist   =
         (Math.abs(leftBrow.y - leftEye.y) +
           Math.abs(rightBrow.y - rightEye.y)) /
         2;
 
-      // --- Análisis de ojos (atención) ---
-      const leftEyeUpper = landmarks[159];
-      const leftEyeLower = landmarks[145];
+      const leftEyeUpper  = landmarks[159];
+      const leftEyeLower  = landmarks[145];
       const rightEyeUpper = landmarks[386];
       const rightEyeLower = landmarks[374];
-      const eyeOpenLeft = Math.abs(leftEyeUpper.y - leftEyeLower.y);
-      const eyeOpenRight = Math.abs(rightEyeUpper.y - rightEyeLower.y);
-      const avgEyeOpen = (eyeOpenLeft + eyeOpenRight) / 2;
+      const eyeOpenLeft   = Math.abs(leftEyeUpper.y - leftEyeLower.y);
+      const eyeOpenRight  = Math.abs(rightEyeUpper.y - rightEyeLower.y);
+      const avgEyeOpen    = (eyeOpenLeft + eyeOpenRight) / 2;
 
-      // --- Análisis de sonrisa ---
-      const leftMouth = landmarks[61];
+      const leftMouth  = landmarks[61];
       const rightMouth = landmarks[291];
       const mouthWidth = Math.abs(rightMouth.x - leftMouth.x);
 
-      // --- Análisis de dirección de mirada (atención) ---
-      const noseTip = landmarks[1];
-      const faceCenter = landmarks[168];
+      const noseTip      = landmarks[1];
+      const faceCenter   = landmarks[168];
       const gazeDeviation = Math.abs(noseTip.x - faceCenter.x);
+      const headMovement  = Math.abs(noseTip.z);
 
-      // --- Detección de movimiento repetitivo (stimming) ---
-      const headMovement = Math.abs(noseTip.z);
-
-      // --- Inferir emoción ---
-      let emocion = "neutro";
-      let nivel_atencion = 0.5;
-      let stimming = false;
-
-      // Sonrisa amplia = feliz
+      let emotion = "neutro";
       if (mouthWidth > 0.15 && mouthOpen < 0.03) {
-        emocion = "feliz";
-      }
-      // Cejas bajas + boca cerrada = frustrado
-      else if (browDistance < 0.02 && mouthOpen < 0.02) {
-        emocion = "frustrado";
-      }
-      // Ojos muy abiertos + boca ligeramente abierta = ansioso
-      else if (avgEyeOpen > 0.025 && mouthOpen > 0.02) {
-        emocion = "ansioso";
-      }
-      // Cejas tensas + movimiento = estresado
-      else if (browDistance < 0.025 && headMovement > 0.1) {
-        emocion = "estresado";
-      }
-      // Ojos medio cerrados = distraído/calmado
-      else if (avgEyeOpen < 0.015) {
-        emocion = gazeDeviation > 0.05 ? "distraido" : "calmado";
+        emotion = "feliz";
+      } else if (browDist < 0.02 && mouthOpen < 0.02) {
+        emotion = "frustrado";
+      } else if (avgEyeOpen > 0.025 && mouthOpen > 0.02) {
+        emotion = "ansioso";
+      } else if (browDist < 0.025 && headMovement > 0.1) {
+        emotion = "estresado";
+      } else if (avgEyeOpen < 0.015) {
+        emotion = gazeDeviation > 0.05 ? "distraido" : "calmado";
       }
 
-      // Nivel de atención basado en dirección de mirada y apertura de ojos
-      nivel_atencion = Math.max(0, Math.min(1, 1 - gazeDeviation * 10));
-      if (avgEyeOpen < 0.012) nivel_atencion *= 0.5; // Ojos cerrados = baja atención
+      let attention_level = Math.max(0, Math.min(1, 1 - gazeDeviation * 10));
+      if (avgEyeOpen < 0.012) attention_level *= 0.5;
 
-      // Detección de stimming: movimiento rápido y repetitivo de la cabeza
-      stimming = headMovement > 0.15;
+      const stimming = headMovement > 0.15;
 
-      return { emocion, nivel_atencion: Math.round(nivel_atencion * 100) / 100, stimming };
+      return {
+        emotion,
+        attention_level: Math.round(attention_level * 100) / 100,
+        stimming,
+      };
     },
     []
   );
 
-  // Manejar respuesta del WebSocket
+  // Procesar respuesta del backend (acciones de adaptación)
   const handleMonitoringResponse = useCallback(
     (response: MonitoringResponse) => {
       setEmotionState({
-        emocion: response.emocion_actual,
-        nivel_atencion: response.nivel_atencion,
+        emocion:          response.emocion_actual,
+        nivel_atencion:   response.nivel_atencion,
       });
 
-      // Procesar acciones de adaptación
       const actionNames = response.acciones.map((a) => a.accion);
-      if (actionNames.length > 0) {
-        setPendingActions(actionNames);
-      }
+      if (actionNames.length > 0) setPendingActions(actionNames);
 
-      // Mostrar pantalla calmante si es necesario
-      if (actionNames.includes("pausa_visual")) {
-        setShowCalmingScreen(true);
-      }
+      if (actionNames.includes("pausa_visual")) setShowCalmingScreen(true);
 
-      // Alertas de crisis
       if (response.alerta_crisis) {
         addCrisisAlert({
-          id: `crisis-${Date.now()}`,
-          student_id: user?.user_id || 0,
-          nivel: response.alerta_crisis,
+          id:         `crisis-${Date.now()}`,
+          student_id: active_student_id || "",
+          nivel:      response.alerta_crisis,
           mensaje:
             response.alerta_crisis === "grave"
               ? "Se ha contactado a un profesional"
@@ -181,19 +156,25 @@ export default function EmotionDetector() {
         });
       }
     },
-    [setEmotionState, setPendingActions, setShowCalmingScreen, addCrisisAlert, user]
+    [
+      active_student_id,
+      setEmotionState,
+      setPendingActions,
+      setShowCalmingScreen,
+      addCrisisAlert,
+    ]
   );
 
-  // Inicializar MediaPipe y WebSocket
+  // Inicializar MediaPipe y WebSocket de monitoreo
   useEffect(() => {
-    if (!token || !user || !activeSession) return;
+    if (!token || !user || !activeSession || !active_student_id) return;
 
     let mounted = true;
 
     const init = async () => {
-      // --- Iniciar WebSocket ---
+      // WebSocket del estudiante — identificado por su UUID
       wsRef.current = new MonitoringWebSocket(
-        user.user_id,
+        active_student_id,
         token,
         handleMonitoringResponse,
         (connected) => {
@@ -208,59 +189,55 @@ export default function EmotionDetector() {
       );
       wsRef.current.connect();
 
-      // --- Iniciar cámara ---
+      // Solicitar acceso a la cámara
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: 320, height: 240, facingMode: "user" },
         });
-
         if (videoRef.current && mounted) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
         }
 
-        // --- Iniciar MediaPipe FaceMesh ---
+        // Inicializar MediaPipe FaceMesh (se carga como script global en layout.tsx)
         // @ts-expect-error — MediaPipe se carga como script global
         if (typeof window !== "undefined" && window.FaceMesh) {
-          // @ts-expect-error — Tipo externo
+          // @ts-expect-error — tipo externo
           const faceMesh = new window.FaceMesh({
             locateFile: (file: string) =>
               `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
           });
-
           faceMesh.setOptions({
             maxNumFaces: 1,
             refineLandmarks: true,
             minDetectionConfidence: 0.5,
             minTrackingConfidence: 0.5,
           });
-
-          faceMesh.onResults((results: { multiFaceLandmarks?: unknown[][] }) => {
-            if (results.multiFaceLandmarks && results.multiFaceLandmarks[0]) {
-              lastLandmarksRef.current = results.multiFaceLandmarks[0];
+          faceMesh.onResults(
+            (results: { multiFaceLandmarks?: unknown[][] }) => {
+              if (results.multiFaceLandmarks?.[0]) {
+                lastLandmarksRef.current = results.multiFaceLandmarks[0];
+              }
             }
-          });
-
+          );
           faceMeshRef.current = faceMesh;
 
-          // Procesar frames
           const processFrame = async () => {
             if (videoRef.current && faceMeshRef.current && mounted) {
-              // @ts-expect-error — Tipo externo
+              // @ts-expect-error — tipo externo
               await faceMeshRef.current.send({ image: videoRef.current });
             }
             if (mounted) requestAnimationFrame(processFrame);
           };
           processFrame();
         }
-      } catch (err) {
+      } catch {
         console.warn(
-          "No se pudo acceder a la cámara. El monitoreo continuará sin detección facial:",
-          err
+          "Cámara no disponible. El monitoreo continuará sin detección facial."
         );
       }
 
-      // --- Enviar datos cada 2 segundos ---
+      // Enviar datos al backend cada 2 segundos
       intervalRef.current = setInterval(() => {
         if (!wsRef.current || !activeSession || !mounted) return;
 
@@ -269,28 +246,27 @@ export default function EmotionDetector() {
           | null;
         const analysis = landmarks
           ? analyzeLandmarks(landmarks)
-          : { emocion: "neutro", nivel_atencion: 0.5, stimming: false };
+          : { emotion: "neutro", attention_level: 0.5, stimming: false };
 
-        const clickSpeed = getClickSpeed();
-        const presionTactil = Math.min(1, clickSpeed / 3); // Normalizar a 0-1
+        // tactile_pressure: boolean (true si hay muchos clics en los últimos 10s)
+        const clickSpeed      = getClickSpeed();
+        const tactilePressure = clickSpeed > 2; // más de 2 clics/s = presión alta
 
         const data: MonitoringData = {
-          session_id: activeSession.id,
-          student_id: activeSession.student_id,
-          emocion: analysis.emocion,
-          nivel_atencion: analysis.nivel_atencion,
-          stimming: analysis.stimming,
-          presion_tactil: presionTactil,
-          velocidad_clics: clickSpeed,
+          id_session:       activeSession.id_session,
+          emotion:          analysis.emotion,
+          attention_level:  analysis.attention_level,
+          stimming:         analysis.stimming,
+          tactile_pressure: tactilePressure,
         };
 
         wsRef.current.send(data);
 
         setEmotionState({
-          emocion: analysis.emocion,
-          nivel_atencion: analysis.nivel_atencion,
-          stimming: analysis.stimming,
-          presion_tactil: presionTactil,
+          emocion:          analysis.emotion,
+          nivel_atencion:   analysis.attention_level,
+          stimming:         analysis.stimming,
+          tactile_pressure: tactilePressure,
         });
       }, 2000);
     };
@@ -301,16 +277,16 @@ export default function EmotionDetector() {
       mounted = false;
       wsRef.current?.disconnect();
       if (intervalRef.current) clearInterval(intervalRef.current);
-
-      // Detener cámara
       if (videoRef.current?.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-        tracks.forEach((track) => track.stop());
+        (videoRef.current.srcObject as MediaStream)
+          .getTracks()
+          .forEach((t) => t.stop());
       }
     };
   }, [
     token,
     user,
+    active_student_id,
     activeSession,
     analyzeLandmarks,
     getClickSpeed,
@@ -318,9 +294,12 @@ export default function EmotionDetector() {
     setEmotionState,
   ]);
 
-  // El componente es invisible — solo procesa datos
+  // Componente invisible — solo procesa datos en background
   return (
-    <div className="fixed top-0 left-0 w-0 h-0 overflow-hidden" aria-hidden="true">
+    <div
+      className="fixed top-0 left-0 w-0 h-0 overflow-hidden"
+      aria-hidden="true"
+    >
       <video
         ref={videoRef}
         width={320}

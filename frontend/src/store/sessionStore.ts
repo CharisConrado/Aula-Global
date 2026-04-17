@@ -1,65 +1,72 @@
 /**
  * Aula Global — Store global con Zustand
- * Maneja autenticación, sesión activa, estado emocional y alertas.
+ * Maneja autenticación, sesión activa y estado emocional en tiempo real.
+ *
+ * NOTA: Los estudiantes NO se autentican. El tutor gestiona al estudiante activo
+ * mediante `active_student_id`, que se persiste junto con el token.
  */
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-interface User {
-  user_id: number;
+export interface User {
+  user_id: string;   // UUID del tutor / profesional / admin
   email: string;
-  rol: "estudiante" | "tutor" | "profesional" | "admin";
+  rol: "tutor" | "profesional" | "admin";
 }
 
-interface ActiveSession {
-  id: number;
-  student_id: number;
-  fecha_inicio: string;
+export interface ActiveSession {
+  id_session: string;
+  id_student: string;
+  start_time: string;
 }
 
-interface EmotionState {
+export interface EmotionState {
   emocion: string;
   nivel_atencion: number;
   stimming: boolean;
-  presion_tactil: number;
+  tactile_pressure: boolean;
 }
 
-interface CrisisAlert {
+export interface CrisisAlert {
   id: string;
-  student_id: number;
-  nivel: string;
+  student_id: string;  // UUID
+  nivel: string;       // 'leve' | 'moderada' | 'grave'
   mensaje: string;
   timestamp: number;
 }
 
 interface SessionStore {
-  // Autenticación
+  // ── Autenticación ──────────────────────────────────────────
   token: string | null;
   user: User | null;
   setAuth: (token: string, user: User) => void;
   logout: () => void;
 
-  // Sesión activa del estudiante
+  // ── Estudiante activo (gestionado por el tutor) ────────────
+  active_student_id: string | null;
+  setActiveStudentId: (id: string | null) => void;
+
+  // ── Sesión activa del estudiante ───────────────────────────
   activeSession: ActiveSession | null;
   setActiveSession: (session: ActiveSession | null) => void;
 
-  // Estado emocional en tiempo real
+  // ── Estado emocional en tiempo real ───────────────────────
   emotionState: EmotionState;
   setEmotionState: (state: Partial<EmotionState>) => void;
 
-  // Alertas de crisis
+  // ── Alertas de crisis ──────────────────────────────────────
   crisisAlerts: CrisisAlert[];
   addCrisisAlert: (alert: CrisisAlert) => void;
   dismissCrisisAlert: (id: string) => void;
   clearCrisisAlerts: () => void;
 
-  // Acciones de adaptación pendientes
+  // ── Acciones de adaptación pendientes ─────────────────────
   pendingActions: string[];
   setPendingActions: (actions: string[]) => void;
   clearPendingActions: () => void;
 
-  // UI: pantalla calmante
+  // ── UI: pantalla calmante ──────────────────────────────────
   showCalmingScreen: boolean;
   setShowCalmingScreen: (show: boolean) => void;
 }
@@ -75,10 +82,16 @@ export const useSessionStore = create<SessionStore>()(
         set({
           token: null,
           user: null,
+          active_student_id: null,
           activeSession: null,
           crisisAlerts: [],
           pendingActions: [],
         }),
+
+      // --- Estudiante activo ---
+      active_student_id: null,
+      setActiveStudentId: (id) =>
+        set({ active_student_id: id, activeSession: null }),
 
       // --- Sesión ---
       activeSession: null,
@@ -89,7 +102,7 @@ export const useSessionStore = create<SessionStore>()(
         emocion: "neutro",
         nivel_atencion: 0.5,
         stimming: false,
-        presion_tactil: 0,
+        tactile_pressure: false,
       },
       setEmotionState: (state) =>
         set((prev) => ({
@@ -119,9 +132,11 @@ export const useSessionStore = create<SessionStore>()(
     }),
     {
       name: "aula-global-session",
+      // Solo se persiste en localStorage lo necesario para restaurar la sesión
       partialize: (state) => ({
         token: state.token,
         user: state.user,
+        active_student_id: state.active_student_id,
       }),
     }
   )
