@@ -1,197 +1,176 @@
 """
 Aula Global — Router de crisis
-Registro, consulta y resolución de crisis detectadas.
+Columnas: id_crisis, id_session, id_type_crisis, id_action, id_student,
+          detection_timestamp, resolved_at, was_effective, required_human, notes
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import Optional
 
 from database import get_db
 from models.schemas import (
-    CrisisCreate,
-    CrisisUpdate,
-    CrisisResponse,
-    TokenData,
-    RolUsuario,
+    CrisisCreate, CrisisUpdate, CrisisResponse,
+    TokenData, RolUsuario,
 )
 from services.auth_service import get_current_user, require_role
 
 router = APIRouter()
 
 
-@router.post("/", response_model=CrisisResponse, status_code=status.HTTP_201_CREATED)
+def _row_to_crisis(r) -> CrisisResponse:
+    return CrisisResponse(
+        id_crisis=str(r[0]), id_session=str(r[1]),
+        id_type_crisis=str(r[2]), id_action=str(r[3]), id_student=str(r[4]),
+        detection_timestamp=r[5], resolved_at=r[6],
+        was_effective=r[7], required_human=r[8], notes=r[9], created_at=r[10],
+    )
+
+
+@router.post("/", response_model=CrisisResponse, status_code=201)
 async def registrar_crisis(
     data: CrisisCreate,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    db:   Session = Depends(get_db),
+    cu:   TokenData = Depends(get_current_user),
 ):
-    """Registra una crisis manualmente (además de las detectadas automáticamente)."""
-    result = db.execute(
+    """Registra una crisis manualmente."""
+    row = db.execute(
         text("""
-            INSERT INTO crisis (session_id, student_id, nivel, emocion_detectada, descripcion, datos_monitoreo, fecha_inicio)
-            VALUES (:session_id, :student_id, :nivel, :emocion_detectada, :descripcion, :datos::jsonb, NOW())
-            RETURNING id, session_id, student_id, nivel, emocion_detectada, descripcion,
-                resuelta, resolucion, resuelta_por, fecha_inicio, fecha_fin, created_at
+            INSERT INTO crisis (id_session, id_type_crisis, id_action, id_student, required_human, notes)
+            VALUES (:id_session::uuid, :id_type_crisis::uuid, :id_action::uuid,
+                    :id_student::uuid, :required_human, :notes)
+            RETURNING id_crisis, id_session, id_type_crisis, id_action, id_student,
+                detection_timestamp, resolved_at, was_effective, required_human, notes, created_at
         """),
         {
-            "session_id": data.session_id,
-            "student_id": data.student_id,
-            "nivel": data.nivel.value,
-            "emocion_detectada": data.emocion_detectada,
-            "descripcion": data.descripcion,
-            "datos": __import__("json").dumps(data.datos_monitoreo) if data.datos_monitoreo else None,
+            "id_session":      data.id_session,
+            "id_type_crisis":  data.id_type_crisis,
+            "id_action":       data.id_action,
+            "id_student":      data.id_student,
+            "required_human":  data.required_human,
+            "notes":           data.notes,
         },
-    )
+    ).fetchone()
     db.commit()
-    row = result.fetchone()
-
-    return CrisisResponse(
-        id=row[0], session_id=row[1], student_id=row[2], nivel=row[3],
-        emocion_detectada=row[4], descripcion=row[5], resuelta=row[6],
-        resolucion=row[7], resuelta_por=row[8], fecha_inicio=row[9],
-        fecha_fin=row[10], created_at=row[11],
-    )
+    return _row_to_crisis(row)
 
 
 @router.get("/", response_model=list[CrisisResponse])
 async def listar_crisis(
-    student_id: Optional[int] = None,
-    session_id: Optional[int] = None,
-    resuelta: Optional[bool] = None,
-    nivel: Optional[str] = None,
-    limit: int = 50,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    student_id: Optional[str]  = None,
+    session_id: Optional[str]  = None,
+    resuelta:   Optional[bool] = None,
+    limit:      int            = 50,
+    db:         Session = Depends(get_db),
+    cu:         TokenData = Depends(get_current_user),
 ):
-    """Lista crisis con filtros opcionales."""
     query = """
-        SELECT id, session_id, student_id, nivel, emocion_detectada, descripcion,
-            resuelta, resolucion, resuelta_por, fecha_inicio, fecha_fin, created_at
+        SELECT id_crisis, id_session, id_type_crisis, id_action, id_student,
+               detection_timestamp, resolved_at, was_effective, required_human, notes, created_at
         FROM crisis WHERE 1=1
     """
-    params = {}
+    params: dict = {}
 
     if student_id:
-        query += " AND student_id = :student_id"
+        query += " AND id_student = :student_id::uuid"
         params["student_id"] = student_id
     if session_id:
-        query += " AND session_id = :session_id"
+        query += " AND id_session = :session_id::uuid"
         params["session_id"] = session_id
-    if resuelta is not None:
-        query += " AND resuelta = :resuelta"
-        params["resuelta"] = resuelta
-    if nivel:
-        query += " AND nivel = :nivel"
-        params["nivel"] = nivel
+    if resuelta is True:
+        query += " AND resolved_at IS NOT NULL"
+    elif resuelta is False:
+        query += " AND resolved_at IS NULL"
 
     # Tutores solo ven crisis de sus estudiantes
-    if current_user.rol == RolUsuario.tutor:
-        query += " AND student_id IN (SELECT id FROM student WHERE tutor_id = :tutor_id)"
-        params["tutor_id"] = current_user.user_id
+    if cu.rol == RolUsuario.tutor:
+        query += """
+            AND id_student IN (
+                SELECT id_student FROM responsible_principal
+                WHERE id_tutor = :tutor_id::uuid AND is_active = true
+            )
+        """
+        params["tutor_id"] = cu.user_id
 
-    query += " ORDER BY fecha_inicio DESC LIMIT :limit"
+    query += " ORDER BY detection_timestamp DESC LIMIT :limit"
     params["limit"] = limit
-
     rows = db.execute(text(query), params).fetchall()
-
-    return [
-        CrisisResponse(
-            id=r[0], session_id=r[1], student_id=r[2], nivel=r[3],
-            emocion_detectada=r[4], descripcion=r[5], resuelta=r[6],
-            resolucion=r[7], resuelta_por=r[8], fecha_inicio=r[9],
-            fecha_fin=r[10], created_at=r[11],
-        )
-        for r in rows
-    ]
+    return [_row_to_crisis(r) for r in rows]
 
 
 @router.get("/active", response_model=list[CrisisResponse])
-async def listar_crisis_activas(
+async def crisis_activas(
     db: Session = Depends(get_db),
-    current_user: TokenData = Depends(require_role(RolUsuario.profesional, RolUsuario.admin, RolUsuario.tutor)),
+    cu: TokenData = Depends(get_current_user),
 ):
-    """Lista todas las crisis sin resolver (para panel de profesionales)."""
+    """Lista crisis sin resolver, ordenadas por gravedad (via type_crisis.severity_level)."""
     query = """
-        SELECT c.id, c.session_id, c.student_id, c.nivel, c.emocion_detectada, c.descripcion,
-            c.resuelta, c.resolucion, c.resuelta_por, c.fecha_inicio, c.fecha_fin, c.created_at
-        FROM crisis c WHERE c.resuelta = false
+        SELECT c.id_crisis, c.id_session, c.id_type_crisis, c.id_action, c.id_student,
+               c.detection_timestamp, c.resolved_at, c.was_effective, c.required_human,
+               c.notes, c.created_at
+        FROM crisis c
+        JOIN type_crisis tc ON tc.id_type_crisis = c.id_type_crisis
+        WHERE c.resolved_at IS NULL
     """
-    params = {}
+    params: dict = {}
 
-    if current_user.rol == RolUsuario.tutor:
-        query += " AND c.student_id IN (SELECT id FROM student WHERE tutor_id = :tutor_id)"
-        params["tutor_id"] = current_user.user_id
+    if cu.rol == RolUsuario.tutor:
+        query += """
+            AND c.id_student IN (
+                SELECT id_student FROM responsible_principal
+                WHERE id_tutor = :tutor_id::uuid AND is_active = true
+            )
+        """
+        params["tutor_id"] = cu.user_id
 
-    query += " ORDER BY CASE c.nivel WHEN 'grave' THEN 1 WHEN 'moderada' THEN 2 ELSE 3 END, c.fecha_inicio DESC"
-
+    query += " ORDER BY tc.severity_level DESC, c.detection_timestamp ASC"
     rows = db.execute(text(query), params).fetchall()
-
-    return [
-        CrisisResponse(
-            id=r[0], session_id=r[1], student_id=r[2], nivel=r[3],
-            emocion_detectada=r[4], descripcion=r[5], resuelta=r[6],
-            resolucion=r[7], resuelta_por=r[8], fecha_inicio=r[9],
-            fecha_fin=r[10], created_at=r[11],
-        )
-        for r in rows
-    ]
+    return [_row_to_crisis(r) for r in rows]
 
 
 @router.get("/{crisis_id}", response_model=CrisisResponse)
 async def obtener_crisis(
-    crisis_id: int,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    crisis_id: str,
+    db:        Session = Depends(get_db),
+    cu:        TokenData = Depends(get_current_user),
 ):
-    """Obtiene una crisis por ID."""
     row = db.execute(
         text("""
-            SELECT id, session_id, student_id, nivel, emocion_detectada, descripcion,
-                resuelta, resolucion, resuelta_por, fecha_inicio, fecha_fin, created_at
-            FROM crisis WHERE id = :id
+            SELECT id_crisis, id_session, id_type_crisis, id_action, id_student,
+                   detection_timestamp, resolved_at, was_effective, required_human, notes, created_at
+            FROM crisis WHERE id_crisis = :id::uuid
         """),
         {"id": crisis_id},
     ).fetchone()
-
     if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crisis no encontrada")
-
-    return CrisisResponse(
-        id=row[0], session_id=row[1], student_id=row[2], nivel=row[3],
-        emocion_detectada=row[4], descripcion=row[5], resuelta=row[6],
-        resolucion=row[7], resuelta_por=row[8], fecha_inicio=row[9],
-        fecha_fin=row[10], created_at=row[11],
-    )
+        raise HTTPException(status_code=404, detail="Crisis no encontrada")
+    return _row_to_crisis(row)
 
 
 @router.put("/{crisis_id}/resolve", response_model=CrisisResponse)
 async def resolver_crisis(
-    crisis_id: int,
-    data: CrisisUpdate,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(require_role(RolUsuario.profesional, RolUsuario.admin, RolUsuario.tutor)),
+    crisis_id: str,
+    data:      CrisisUpdate,
+    db:        Session = Depends(get_db),
+    cu:        TokenData = Depends(get_current_user),
 ):
     """Marca una crisis como resuelta."""
     result = db.execute(
         text("""
-            UPDATE crisis SET
-                resuelta = true,
-                resolucion = :resolucion,
-                resuelta_por = :resuelta_por,
-                fecha_fin = NOW()
-            WHERE id = :id AND resuelta = false
+            UPDATE crisis
+            SET resolved_at   = NOW(),
+                was_effective = :was_effective,
+                notes         = COALESCE(:notes, notes)
+            WHERE id_crisis = :id::uuid AND resolved_at IS NULL
         """),
         {
-            "id": crisis_id,
-            "resolucion": data.resolucion,
-            "resuelta_por": current_user.user_id,
+            "id":           crisis_id,
+            "was_effective": data.was_effective,
+            "notes":         data.notes,
         },
     )
     db.commit()
-
     if result.rowcount == 0:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crisis no encontrada o ya resuelta")
-
-    return await obtener_crisis(crisis_id, db, current_user)
+        raise HTTPException(status_code=404, detail="Crisis no encontrada o ya resuelta")
+    return await obtener_crisis(crisis_id, db, cu)

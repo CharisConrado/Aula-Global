@@ -1,362 +1,270 @@
 """
 Aula Global — Router de sesiones
-Crear, iniciar, cerrar sesiones y gestionar actividades del estudiante.
+Columnas: id_session, id_student, start_time, end_time, duration_sec, status
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import Optional
 
 from database import get_db
 from models.schemas import (
-    SessionCreate,
-    SessionResponse,
-    SessionClose,
-    StudentActivityCreate,
-    StudentActivityUpdate,
-    StudentActivityResponse,
-    TokenData,
-    RolUsuario,
+    SessionCreate, SessionResponse, SessionClose,
+    StudentActivityCreate, StudentActivityUpdate, StudentActivityResponse,
+    TokenData, RolUsuario,
 )
 from services.auth_service import get_current_user, require_role
 
 router = APIRouter()
 
 
-@router.post("/", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
+def _row_to_session(r) -> SessionResponse:
+    return SessionResponse(
+        id_session=str(r[0]), id_student=str(r[1]),
+        session_type=r[2], start_time=r[3], end_time=r[4],
+        duration_sec=r[5], device=r[6], device_type=r[7],
+        status=r[8], created_at=r[9],
+    )
+
+
+# ── Sesiones ─────────────────────────────────────────────────
+
+@router.post("/", response_model=SessionResponse, status_code=201)
 async def crear_sesion(
     data: SessionCreate,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    db:   Session = Depends(get_db),
+    cu:   TokenData = Depends(get_current_user),
 ):
-    """Crea una nueva sesión para un estudiante."""
-    # Verificar que el estudiante exista
+    """Crea una nueva sesión para un estudiante. Cierra sesiones activas previas."""
+    # Verificar estudiante
     student = db.execute(
-        text("SELECT id, tutor_id FROM student WHERE id = :id AND is_active = true"),
-        {"id": data.student_id},
+        text("SELECT id_student FROM student WHERE id_student = :id::uuid AND account_status = 'activo'"),
+        {"id": data.id_student},
     ).fetchone()
     if not student:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Estudiante no encontrado")
+        raise HTTPException(status_code=404, detail="Estudiante no encontrado o inactivo")
 
-    # Verificar permisos
-    if current_user.rol == RolUsuario.tutor and student[1] != current_user.user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes acceso a este estudiante")
-
-    # Cerrar sesiones activas previas del estudiante
+    # Cerrar sesiones activas anteriores
     db.execute(
         text("""
-            UPDATE session SET is_active = false, fecha_fin = NOW()
-            WHERE student_id = :sid AND is_active = true
+            UPDATE session SET status = 'interrumpida', end_time = NOW(),
+                duration_sec = EXTRACT(EPOCH FROM (NOW() - start_time))::int
+            WHERE id_student = :sid::uuid AND status = 'activa'
         """),
-        {"sid": data.student_id},
+        {"sid": data.id_student},
     )
 
-    result = db.execute(
+    row = db.execute(
         text("""
-            INSERT INTO session (student_id, fecha_inicio, is_active)
-            VALUES (:student_id, NOW(), true)
-            RETURNING id, student_id, fecha_inicio, fecha_fin, duracion_total,
-                actividades_completadas, nota_cuantitativa, nota_cualitativa,
-                crisis_ocurridas, intervenciones_realizadas, is_active, created_at
+            INSERT INTO session (id_student, session_type, device, device_type, status)
+            VALUES (:id_student::uuid, :session_type, :device, :device_type, 'activa')
+            RETURNING id_session, id_student, session_type, start_time, end_time,
+                duration_sec, device, device_type, status, created_at
         """),
-        {"student_id": data.student_id},
-    )
+        {
+            "id_student":   data.id_student,
+            "session_type": data.session_type,
+            "device":       data.device,
+            "device_type":  data.device_type,
+        },
+    ).fetchone()
     db.commit()
-    row = result.fetchone()
-
-    return SessionResponse(
-        id=row[0], student_id=row[1], fecha_inicio=row[2], fecha_fin=row[3],
-        duracion_total=row[4], actividades_completadas=row[5],
-        nota_cuantitativa=row[6], nota_cualitativa=row[7],
-        crisis_ocurridas=row[8], intervenciones_realizadas=row[9],
-        is_active=row[10], created_at=row[11],
-    )
+    return _row_to_session(row)
 
 
 @router.get("/", response_model=list[SessionResponse])
 async def listar_sesiones(
-    student_id: Optional[int] = None,
-    activa: Optional[bool] = None,
-    limit: int = 50,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    student_id: Optional[str]  = None,
+    activa:     Optional[bool] = None,
+    limit:      int            = 50,
+    db:         Session = Depends(get_db),
+    cu:         TokenData = Depends(get_current_user),
 ):
-    """Lista sesiones con filtros opcionales."""
     query = """
-        SELECT id, student_id, fecha_inicio, fecha_fin, duracion_total,
-            actividades_completadas, nota_cuantitativa, nota_cualitativa,
-            crisis_ocurridas, intervenciones_realizadas, is_active, created_at
+        SELECT id_session, id_student, session_type, start_time, end_time,
+               duration_sec, device, device_type, status, created_at
         FROM session WHERE 1=1
     """
-    params = {}
+    params: dict = {}
 
     if student_id:
-        query += " AND student_id = :student_id"
+        query += " AND id_student = :student_id::uuid"
         params["student_id"] = student_id
 
     if activa is not None:
-        query += " AND is_active = :activa"
-        params["activa"] = activa
+        query += " AND status = :st"
+        params["st"] = "activa" if activa else "completada"
 
     # Tutores solo ven sesiones de sus estudiantes
-    if current_user.rol == RolUsuario.tutor:
-        query += " AND student_id IN (SELECT id FROM student WHERE tutor_id = :tutor_id)"
-        params["tutor_id"] = current_user.user_id
+    if cu.rol == RolUsuario.tutor:
+        query += """
+            AND id_student IN (
+                SELECT id_student FROM responsible_principal
+                WHERE id_tutor = :tutor_id::uuid AND is_active = true
+            )
+        """
+        params["tutor_id"] = cu.user_id
 
-    # Estudiantes solo ven sus propias sesiones
-    if current_user.rol == RolUsuario.estudiante:
-        query += " AND student_id = :own_id"
-        params["own_id"] = current_user.user_id
-
-    query += " ORDER BY fecha_inicio DESC LIMIT :limit"
+    query += " ORDER BY start_time DESC LIMIT :limit"
     params["limit"] = limit
 
     rows = db.execute(text(query), params).fetchall()
-
-    return [
-        SessionResponse(
-            id=r[0], student_id=r[1], fecha_inicio=r[2], fecha_fin=r[3],
-            duracion_total=r[4], actividades_completadas=r[5],
-            nota_cuantitativa=r[6], nota_cualitativa=r[7],
-            crisis_ocurridas=r[8], intervenciones_realizadas=r[9],
-            is_active=r[10], created_at=r[11],
-        )
-        for r in rows
-    ]
+    return [_row_to_session(r) for r in rows]
 
 
 @router.get("/{session_id}", response_model=SessionResponse)
 async def obtener_sesion(
-    session_id: int,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    session_id: str,
+    db:         Session = Depends(get_db),
+    cu:         TokenData = Depends(get_current_user),
 ):
-    """Obtiene una sesión por ID."""
     row = db.execute(
         text("""
-            SELECT id, student_id, fecha_inicio, fecha_fin, duracion_total,
-                actividades_completadas, nota_cuantitativa, nota_cualitativa,
-                crisis_ocurridas, intervenciones_realizadas, is_active, created_at
-            FROM session WHERE id = :id
+            SELECT id_session, id_student, session_type, start_time, end_time,
+                   duration_sec, device, device_type, status, created_at
+            FROM session WHERE id_session = :id::uuid
         """),
         {"id": session_id},
     ).fetchone()
-
     if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sesión no encontrada")
-
-    return SessionResponse(
-        id=row[0], student_id=row[1], fecha_inicio=row[2], fecha_fin=row[3],
-        duracion_total=row[4], actividades_completadas=row[5],
-        nota_cuantitativa=row[6], nota_cualitativa=row[7],
-        crisis_ocurridas=row[8], intervenciones_realizadas=row[9],
-        is_active=row[10], created_at=row[11],
-    )
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    return _row_to_session(row)
 
 
 @router.put("/{session_id}/close", response_model=SessionResponse)
 async def cerrar_sesion(
-    session_id: int,
-    data: SessionClose,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    session_id: str,
+    data:       SessionClose,
+    db:         Session = Depends(get_db),
+    cu:         TokenData = Depends(get_current_user),
 ):
-    """Cierra una sesión activa, calculando estadísticas finales."""
+    """Cierra una sesión activa y calcula su duración."""
     session = db.execute(
-        text("SELECT id, student_id, fecha_inicio FROM session WHERE id = :id AND is_active = true"),
+        text("SELECT id_session FROM session WHERE id_session = :id::uuid AND status = 'activa'"),
         {"id": session_id},
     ).fetchone()
-
     if not session:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sesión activa no encontrada")
+        raise HTTPException(status_code=404, detail="Sesión activa no encontrada")
 
-    # Calcular estadísticas
-    stats = db.execute(
-        text("""
-            SELECT
-                COUNT(*) FILTER (WHERE completada = true) as completadas,
-                AVG(nota) FILTER (WHERE nota IS NOT NULL) as promedio_nota
-            FROM student_activity WHERE session_id = :sid
-        """),
-        {"sid": session_id},
-    ).fetchone()
-
-    crisis_count = db.execute(
-        text("SELECT COUNT(*) FROM crisis WHERE session_id = :sid"),
-        {"sid": session_id},
-    ).fetchone()[0]
-
-    intervention_count = db.execute(
-        text("SELECT COUNT(*) FROM intervention WHERE crisis_id IN (SELECT id FROM crisis WHERE session_id = :sid)"),
-        {"sid": session_id},
-    ).fetchone()[0]
+    close_status = data.status if data.status in ("completada", "interrumpida", "crisis") else "completada"
 
     db.execute(
         text("""
             UPDATE session SET
-                is_active = false,
-                fecha_fin = NOW(),
-                duracion_total = EXTRACT(EPOCH FROM (NOW() - fecha_inicio))::int,
-                actividades_completadas = :completadas,
-                nota_cuantitativa = :promedio,
-                nota_cualitativa = :cualitativa,
-                crisis_ocurridas = :crisis,
-                intervenciones_realizadas = :intervenciones
-            WHERE id = :id
+                status       = :status,
+                end_time     = NOW(),
+                duration_sec = EXTRACT(EPOCH FROM (NOW() - start_time))::int
+            WHERE id_session = :id::uuid
         """),
-        {
-            "id": session_id,
-            "completadas": stats[0] or 0,
-            "promedio": round(stats[1], 2) if stats[1] else None,
-            "cualitativa": data.nota_cualitativa,
-            "crisis": crisis_count,
-            "intervenciones": intervention_count,
-        },
+        {"id": session_id, "status": close_status},
     )
     db.commit()
+    return await obtener_sesion(session_id, db, cu)
 
-    return await obtener_sesion(session_id, db, current_user)
+
+# ── Actividades dentro de la sesión ──────────────────────────
+
+def _row_to_sa(r) -> StudentActivityResponse:
+    return StudentActivityResponse(
+        id_student_activity=str(r[0]), id_student=str(r[1]),
+        id_activity=str(r[2]), id_session=str(r[3]),
+        score=r[4], achievement_level=r[5], success_rate=r[6],
+        stress_level=r[7], time_spent_sec=r[8], had_crisis=r[9],
+        tactile_pressure=r[10], stimming_detected=r[11],
+        format_used=r[12], qualitative_notes=r[13],
+        completion_date=r[14], is_completed=r[15],
+    )
 
 
-# --- Actividades del estudiante dentro de la sesión ---
-
-@router.post("/{session_id}/activities", response_model=StudentActivityResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{session_id}/activities", response_model=StudentActivityResponse, status_code=201)
 async def iniciar_actividad(
-    session_id: int,
-    data: StudentActivityCreate,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    session_id: str,
+    data:       StudentActivityCreate,
+    db:         Session = Depends(get_db),
+    cu:         TokenData = Depends(get_current_user),
 ):
-    """Inicia una actividad dentro de una sesión."""
-    # Verificar que la sesión esté activa
+    # Verificar sesión activa
     session = db.execute(
-        text("SELECT id FROM session WHERE id = :id AND is_active = true"),
+        text("SELECT id_session FROM session WHERE id_session = :id::uuid AND status = 'activa'"),
         {"id": session_id},
     ).fetchone()
     if not session:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sesión activa no encontrada")
+        raise HTTPException(status_code=404, detail="Sesión activa no encontrada")
 
-    result = db.execute(
+    row = db.execute(
         text("""
-            INSERT INTO student_activity (session_id, activity_id, student_id, fecha_inicio)
-            VALUES (:session_id, :activity_id, :student_id, NOW())
-            RETURNING id, session_id, activity_id, student_id, nota, completada,
-                tiempo_dedicado, intentos, formato_usado, stimming_detectado,
-                presion_tactil, nivel_atencion_promedio, respuestas_json,
-                fecha_inicio, fecha_fin, created_at
+            INSERT INTO student_activity (id_student, id_activity, id_session,
+                achievement_level, had_crisis, tactile_pressure, stimming_detected, is_completed)
+            VALUES (:id_student::uuid, :id_activity::uuid, :id_session::uuid,
+                'en_progreso', false, false, false, false)
+            RETURNING id_student_activity, id_student, id_activity, id_session,
+                score, achievement_level, success_rate, stress_level, time_spent_sec,
+                had_crisis, tactile_pressure, stimming_detected, format_used,
+                qualitative_notes, completion_date, is_completed
         """),
         {
-            "session_id": session_id,
-            "activity_id": data.activity_id,
-            "student_id": data.student_id,
+            "id_student":  data.id_student,
+            "id_activity": data.id_activity,
+            "id_session":  session_id,
         },
-    )
+    ).fetchone()
     db.commit()
-    row = result.fetchone()
-
-    return StudentActivityResponse(
-        id=row[0], session_id=row[1], activity_id=row[2], student_id=row[3],
-        nota=row[4], completada=row[5], tiempo_dedicado=row[6], intentos=row[7],
-        formato_usado=row[8], stimming_detectado=row[9], presion_tactil=row[10],
-        nivel_atencion_promedio=row[11], respuestas_json=row[12],
-        fecha_inicio=row[13], fecha_fin=row[14], created_at=row[15],
-    )
+    return _row_to_sa(row)
 
 
-@router.put("/{session_id}/activities/{activity_record_id}", response_model=StudentActivityResponse)
+@router.put("/{session_id}/activities/{record_id}", response_model=StudentActivityResponse)
 async def actualizar_actividad(
-    session_id: int,
-    activity_record_id: int,
-    data: StudentActivityUpdate,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    session_id: str,
+    record_id:  str,
+    data:       StudentActivityUpdate,
+    db:         Session = Depends(get_db),
+    cu:         TokenData = Depends(get_current_user),
 ):
-    """Actualiza el progreso de una actividad (nota, completada, etc.)."""
     updates = data.model_dump(exclude_unset=True)
     if not updates:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No se proporcionaron datos")
+        raise HTTPException(status_code=400, detail="Sin datos para actualizar")
 
-    # Si se marca como completada, agregar fecha_fin
-    if updates.get("completada"):
-        updates["fecha_fin_val"] = True
-
-    set_parts = []
-    for k in updates:
-        if k == "fecha_fin_val":
-            continue
-        if k == "respuestas_json":
-            set_parts.append(f"{k} = :{k}::jsonb")
-        else:
-            set_parts.append(f"{k} = :{k}")
-
-    if updates.get("fecha_fin_val"):
-        set_parts.append("fecha_fin = NOW()")
-        del updates["fecha_fin_val"]
-
-    set_clause = ", ".join(set_parts)
-    updates["id"] = activity_record_id
+    set_parts = [f"{k} = :{k}" for k in updates]
+    updates["id"]  = record_id
     updates["sid"] = session_id
 
-    # Serializar respuestas_json si existe
-    if "respuestas_json" in updates and updates["respuestas_json"] is not None:
-        import json
-        updates["respuestas_json"] = json.dumps(updates["respuestas_json"])
-
-    result = db.execute(
-        text(f"UPDATE student_activity SET {set_clause} WHERE id = :id AND session_id = :sid"),
+    db.execute(
+        text(f"UPDATE student_activity SET {', '.join(set_parts)} WHERE id_student_activity = :id::uuid AND id_session = :sid::uuid"),
         updates,
     )
     db.commit()
 
-    if result.rowcount == 0:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registro de actividad no encontrado")
-
     row = db.execute(
         text("""
-            SELECT id, session_id, activity_id, student_id, nota, completada,
-                tiempo_dedicado, intentos, formato_usado, stimming_detectado,
-                presion_tactil, nivel_atencion_promedio, respuestas_json,
-                fecha_inicio, fecha_fin, created_at
-            FROM student_activity WHERE id = :id
+            SELECT id_student_activity, id_student, id_activity, id_session,
+                score, achievement_level, success_rate, stress_level, time_spent_sec,
+                had_crisis, tactile_pressure, stimming_detected, format_used,
+                qualitative_notes, completion_date, is_completed
+            FROM student_activity WHERE id_student_activity = :id::uuid
         """),
-        {"id": activity_record_id},
+        {"id": record_id},
     ).fetchone()
-
-    return StudentActivityResponse(
-        id=row[0], session_id=row[1], activity_id=row[2], student_id=row[3],
-        nota=row[4], completada=row[5], tiempo_dedicado=row[6], intentos=row[7],
-        formato_usado=row[8], stimming_detectado=row[9], presion_tactil=row[10],
-        nivel_atencion_promedio=row[11], respuestas_json=row[12],
-        fecha_inicio=row[13], fecha_fin=row[14], created_at=row[15],
-    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Registro no encontrado")
+    return _row_to_sa(row)
 
 
 @router.get("/{session_id}/activities", response_model=list[StudentActivityResponse])
 async def listar_actividades_sesion(
-    session_id: int,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+    session_id: str,
+    db:         Session = Depends(get_db),
+    cu:         TokenData = Depends(get_current_user),
 ):
-    """Lista todas las actividades realizadas en una sesión."""
     rows = db.execute(
         text("""
-            SELECT id, session_id, activity_id, student_id, nota, completada,
-                tiempo_dedicado, intentos, formato_usado, stimming_detectado,
-                presion_tactil, nivel_atencion_promedio, respuestas_json,
-                fecha_inicio, fecha_fin, created_at
-            FROM student_activity WHERE session_id = :sid ORDER BY fecha_inicio ASC
+            SELECT id_student_activity, id_student, id_activity, id_session,
+                score, achievement_level, success_rate, stress_level, time_spent_sec,
+                had_crisis, tactile_pressure, stimming_detected, format_used,
+                qualitative_notes, completion_date, is_completed
+            FROM student_activity WHERE id_session = :sid::uuid
+            ORDER BY completion_date ASC
         """),
         {"sid": session_id},
     ).fetchall()
-
-    return [
-        StudentActivityResponse(
-            id=r[0], session_id=r[1], activity_id=r[2], student_id=r[3],
-            nota=r[4], completada=r[5], tiempo_dedicado=r[6], intentos=r[7],
-            formato_usado=r[8], stimming_detectado=r[9], presion_tactil=r[10],
-            nivel_atencion_promedio=r[11], respuestas_json=r[12],
-            fecha_inicio=r[13], fecha_fin=r[14], created_at=r[15],
-        )
-        for r in rows
-    ]
+    return [_row_to_sa(r) for r in rows]

@@ -1,93 +1,49 @@
 """
-Aula Global — Router de monitoreo en tiempo real
-WebSocket para recibir datos de MediaPipe y enviar acciones de adaptación.
+Aula Global — Router de monitoreo (WebSocket)
+Columnas reales: id_monitoring, id_session, emotion, attention_level (numeric),
+                 stimming (bool), tactile_pressure (bool), action_taken (varchar),
+                 detected_at (timestamptz)
+NOTA: monitoring NO tiene id_student — se accede a través de session.id_student
 """
 
 import json
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import Optional
 
 from database import get_db, SessionLocal
 from models.schemas import (
-    MonitoringData,
-    MonitoringResponse,
-    Emocion,
-    AccionAdaptacion,
-    NivelCrisis,
-    TokenData,
-    RolUsuario,
+    MonitoringData, MonitoringResponse,
+    Emocion, AccionMonitoreo,
+    TokenData, RolUsuario,
 )
 from services.auth_service import get_current_user, decode_token
 from services.adaptation_engine import adaptation_engine
 
 router = APIRouter()
 
-# Conexiones activas de WebSocket: {student_id: WebSocket}
-active_connections: dict[int, WebSocket] = {}
-
-# Conexiones de tutores observando: {student_id: [WebSocket]}
-tutor_connections: dict[int, list[WebSocket]] = {}
-
-
-class ConnectionManager:
-    """Gestiona las conexiones WebSocket de monitoreo."""
-
-    async def connect_student(self, student_id: int, websocket: WebSocket):
-        await websocket.accept()
-        active_connections[student_id] = websocket
-
-    async def connect_tutor(self, student_id: int, websocket: WebSocket):
-        await websocket.accept()
-        if student_id not in tutor_connections:
-            tutor_connections[student_id] = []
-        tutor_connections[student_id].append(websocket)
-
-    def disconnect_student(self, student_id: int):
-        active_connections.pop(student_id, None)
-        adaptation_engine.clear_state(student_id)
-
-    def disconnect_tutor(self, student_id: int, websocket: WebSocket):
-        if student_id in tutor_connections:
-            tutor_connections[student_id] = [
-                ws for ws in tutor_connections[student_id] if ws != websocket
-            ]
-
-    async def notify_tutors(self, student_id: int, data: dict):
-        """Envía datos a todos los tutores observando a un estudiante."""
-        if student_id in tutor_connections:
-            disconnected = []
-            for ws in tutor_connections[student_id]:
-                try:
-                    await ws.send_json(data)
-                except Exception:
-                    disconnected.append(ws)
-            for ws in disconnected:
-                tutor_connections[student_id].remove(ws)
+# {id_student: WebSocket}
+active_connections: dict[str, WebSocket] = {}
+# {id_student: [WebSocket]}  ← tutores observando
+tutor_connections: dict[str, list[WebSocket]] = {}
 
 
-manager = ConnectionManager()
-
+# ── WebSocket del estudiante ─────────────────────────────────
 
 @router.websocket("/ws/{student_id}")
-async def websocket_monitoreo(websocket: WebSocket, student_id: int):
+async def ws_estudiante(websocket: WebSocket, student_id: str):
     """
-    WebSocket principal de monitoreo.
     Recibe datos de MediaPipe cada 2 segundos y devuelve acciones de adaptación.
-
-    Mensaje esperado (JSON):
+    Mensaje esperado:
     {
-        "session_id": int,
-        "student_id": int,
-        "emocion": "neutro|feliz|frustrado|ansioso|distraido|estresado|calmado",
-        "nivel_atencion": float (0-1),
-        "stimming": bool,
-        "presion_tactil": float (0-1),
-        "velocidad_clics": float
+      "id_session": "uuid",
+      "emotion": "neutro|feliz|...",
+      "attention_level": 0.0-1.0,
+      "stimming": bool,
+      "tactile_pressure": bool
     }
     """
-    # Aceptar conexión — la autenticación se valida en el primer mensaje o vía query param
     token = websocket.query_params.get("token")
     if token:
         try:
@@ -96,114 +52,96 @@ async def websocket_monitoreo(websocket: WebSocket, student_id: int):
             await websocket.close(code=4001, reason="Token inválido")
             return
 
-    await manager.connect_student(student_id, websocket)
-
+    await websocket.accept()
+    active_connections[student_id] = websocket
     db = SessionLocal()
+
     try:
         while True:
-            raw = await websocket.receive_text()
+            raw  = await websocket.receive_text()
             data = json.loads(raw)
-
-            # Validar datos con Pydantic
             monitoring = MonitoringData(**data)
 
-            # Guardar en base de datos
+            # Determinar qué acción tomar (motor de adaptación)
+            response = adaptation_engine.process(
+                student_id=student_id,
+                session_id=monitoring.id_session,
+                emocion=monitoring.emotion,
+                nivel_atencion=monitoring.attention_level,
+                stimming=monitoring.stimming,
+                presion_tactil=1.0 if monitoring.tactile_pressure else 0.0,
+            )
+
+            # La DB solo acepta UN action_taken por registro (el más prioritario)
+            action_taken: str = AccionMonitoreo.ninguna.value
+            if response.acciones:
+                action_taken = response.acciones[0].accion  # Ya es str
+
+            # Guardar en monitoring
             db.execute(
                 text("""
-                    INSERT INTO monitoring (session_id, student_id, emocion, nivel_atencion,
-                        stimming, presion_tactil, velocidad_clics, timestamp)
-                    VALUES (:session_id, :student_id, :emocion, :nivel_atencion,
-                        :stimming, :presion_tactil, :velocidad_clics, NOW())
+                    INSERT INTO monitoring (id_session, emotion, attention_level,
+                        stimming, tactile_pressure, action_taken)
+                    VALUES (:id_session::uuid, :emotion, :attention_level,
+                        :stimming, :tactile_pressure, :action_taken)
                 """),
                 {
-                    "session_id": monitoring.session_id,
-                    "student_id": monitoring.student_id,
-                    "emocion": monitoring.emocion.value,
-                    "nivel_atencion": monitoring.nivel_atencion,
-                    "stimming": monitoring.stimming,
-                    "presion_tactil": monitoring.presion_tactil,
-                    "velocidad_clics": monitoring.velocidad_clics,
+                    "id_session":       monitoring.id_session,
+                    "emotion":          monitoring.emotion.value,
+                    "attention_level":  monitoring.attention_level,
+                    "stimming":         monitoring.stimming,
+                    "tactile_pressure": monitoring.tactile_pressure,
+                    "action_taken":     action_taken,
                 },
             )
-            db.commit()
 
-            # Procesar con el motor de adaptación
-            response = adaptation_engine.process(
-                student_id=monitoring.student_id,
-                session_id=monitoring.session_id,
-                emocion=monitoring.emocion,
-                nivel_atencion=monitoring.nivel_atencion,
-                stimming=monitoring.stimming,
-                presion_tactil=monitoring.presion_tactil or 0.0,
-            )
-
-            # Guardar acciones en la base de datos
-            for accion in response.acciones:
-                db.execute(
-                    text("""
-                        INSERT INTO action_rto (session_id, student_id, accion, motivo, datos_contexto, timestamp)
-                        VALUES (:session_id, :student_id, :accion, :motivo, :datos::jsonb, NOW())
-                    """),
-                    {
-                        "session_id": monitoring.session_id,
-                        "student_id": monitoring.student_id,
-                        "accion": accion.accion.value,
-                        "motivo": accion.motivo,
-                        "datos": json.dumps(accion.datos) if accion.datos else None,
-                    },
-                )
-
-                # Si hay crisis moderada o grave, registrarla
-                if accion.accion == AccionAdaptacion.alerta_tutor:
-                    _registrar_crisis(db, monitoring.session_id, monitoring.student_id, NivelCrisis.moderada, monitoring.emocion.value)
-                elif accion.accion == AccionAdaptacion.intervencion_profesional:
-                    _registrar_crisis(db, monitoring.session_id, monitoring.student_id, NivelCrisis.grave, monitoring.emocion.value)
+            # Registrar crisis si hay alerta
+            if response.alerta_crisis:
+                _registrar_crisis_auto(db, monitoring.id_session, student_id, response.alerta_crisis)
 
             db.commit()
 
-            # Enviar respuesta al estudiante
-            response_dict = response.model_dump()
-            response_dict["emocion_actual"] = response.emocion_actual.value
-            response_dict["alerta_crisis"] = response.alerta_crisis.value if response.alerta_crisis else None
-            for a in response_dict["acciones"]:
-                a["accion"] = a["accion"].value if hasattr(a["accion"], "value") else a["accion"]
-
-            await websocket.send_json(response_dict)
-
-            # Notificar a tutores observando
-            tutor_data = {
-                "type": "monitoring_update",
-                "student_id": student_id,
-                "emocion": monitoring.emocion.value,
-                "nivel_atencion": monitoring.nivel_atencion,
-                "stimming": monitoring.stimming,
-                "presion_tactil": monitoring.presion_tactil,
-                "acciones": [a.model_dump() for a in response.acciones],
-                "alerta_crisis": response.alerta_crisis.value if response.alerta_crisis else None,
+            # Respuesta al estudiante
+            resp_dict = {
+                "status":         "ok",
+                "acciones":       [{"accion": a.accion, "motivo": a.motivo, "datos": a.datos} for a in response.acciones],
+                "emocion_actual": response.emocion_actual,
+                "nivel_atencion": response.nivel_atencion,
+                "alerta_crisis":  response.alerta_crisis,
             }
-            # Serializar enums en tutor_data
-            for a in tutor_data["acciones"]:
-                a["accion"] = a["accion"].value if hasattr(a["accion"], "value") else a["accion"]
+            await websocket.send_json(resp_dict)
 
-            await manager.notify_tutors(student_id, tutor_data)
+            # Notificar a tutores conectados
+            await _notify_tutors(student_id, {
+                "type":           "monitoring_update",
+                "student_id":     student_id,
+                "emocion":        monitoring.emotion.value,
+                "nivel_atencion": monitoring.attention_level,
+                "stimming":       monitoring.stimming,
+                "acciones":       resp_dict["acciones"],
+                "alerta_crisis":  response.alerta_crisis,
+            })
 
     except WebSocketDisconnect:
-        manager.disconnect_student(student_id)
+        pass
     except json.JSONDecodeError:
         await websocket.send_json({"status": "error", "mensaje": "JSON inválido"})
     except Exception as e:
-        await websocket.send_json({"status": "error", "mensaje": str(e)})
+        try:
+            await websocket.send_json({"status": "error", "mensaje": str(e)})
+        except Exception:
+            pass
     finally:
-        manager.disconnect_student(student_id)
+        active_connections.pop(student_id, None)
+        adaptation_engine.clear_state(student_id)
         db.close()
 
 
+# ── WebSocket del tutor ──────────────────────────────────────
+
 @router.websocket("/ws/tutor/{student_id}")
-async def websocket_tutor(websocket: WebSocket, student_id: int):
-    """
-    WebSocket para que el tutor observe el monitoreo en tiempo real de un estudiante.
-    Recibe actualizaciones cada vez que se procesa una muestra del estudiante.
-    """
+async def ws_tutor(websocket: WebSocket, student_id: str):
+    """El tutor observa en tiempo real el monitoreo de un estudiante."""
     token = websocket.query_params.get("token")
     if token:
         try:
@@ -212,61 +150,105 @@ async def websocket_tutor(websocket: WebSocket, student_id: int):
             await websocket.close(code=4001, reason="Token inválido")
             return
 
-    await manager.connect_tutor(student_id, websocket)
+    await websocket.accept()
+    if student_id not in tutor_connections:
+        tutor_connections[student_id] = []
+    tutor_connections[student_id].append(websocket)
 
     try:
         while True:
-            # Mantener la conexión viva — el tutor solo recibe
-            await websocket.receive_text()
+            await websocket.receive_text()   # Mantener viva la conexión
     except WebSocketDisconnect:
-        manager.disconnect_tutor(student_id, websocket)
+        pass
+    finally:
+        if student_id in tutor_connections and websocket in tutor_connections[student_id]:
+            tutor_connections[student_id].remove(websocket)
 
 
-def _registrar_crisis(db: Session, session_id: int, student_id: int, nivel: NivelCrisis, emocion: str):
-    """Registra una crisis detectada automáticamente."""
-    # Verificar que no haya una crisis activa reciente (evitar duplicados)
+async def _notify_tutors(student_id: str, data: dict):
+    conns = tutor_connections.get(student_id, [])
+    dead  = []
+    for ws in conns:
+        try:
+            await ws.send_json(data)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        conns.remove(ws)
+
+
+def _registrar_crisis_auto(db: Session, session_id: str, student_id: str, nivel: str):
+    """Registra una crisis automática si no hay una activa reciente."""
+    # Mapear nivel a severity_level
+    sev = {"leve": 1, "moderada": 2, "grave": 3}.get(nivel, 1)
+
+    # Buscar type_crisis correspondiente
+    tc = db.execute(
+        text("SELECT id_type_crisis FROM type_crisis WHERE severity_level = :sev ORDER BY created_at ASC LIMIT 1"),
+        {"sev": sev},
+    ).fetchone()
+    if not tc:
+        return  # No hay type_crisis configurado en la DB
+
+    # Buscar id_action correspondiente al nivel
+    action_name_map = {
+        "leve":     "mostrar_pista",
+        "moderada": "alerta_tutor",
+        "grave":    "intervencion_profesional",
+    }
+    action_name = action_name_map.get(nivel, "mostrar_pista")
+    ac = db.execute(
+        text("SELECT id_action FROM action_rto WHERE action_name = :name LIMIT 1"),
+        {"name": action_name},
+    ).fetchone()
+    if not ac:
+        return
+
+    # Evitar crisis duplicadas en los últimos 2 minutos
     recent = db.execute(
         text("""
-            SELECT id FROM crisis
-            WHERE session_id = :sid AND student_id = :stid AND resuelta = false
-            AND fecha_inicio > NOW() - INTERVAL '2 minutes'
+            SELECT id_crisis FROM crisis
+            WHERE id_session = :sid::uuid AND id_student = :stid::uuid
+              AND resolved_at IS NULL
+              AND detection_timestamp > NOW() - INTERVAL '2 minutes'
         """),
         {"sid": session_id, "stid": student_id},
     ).fetchone()
+    if recent:
+        return
 
-    if not recent:
-        db.execute(
-            text("""
-                INSERT INTO crisis (session_id, student_id, nivel, emocion_detectada, descripcion, fecha_inicio)
-                VALUES (:session_id, :student_id, :nivel, :emocion, :descripcion, NOW())
-            """),
-            {
-                "session_id": session_id,
-                "student_id": student_id,
-                "nivel": nivel.value,
-                "emocion": emocion,
-                "descripcion": f"Crisis {nivel.value} detectada automáticamente por el motor de adaptación",
-            },
-        )
+    db.execute(
+        text("""
+            INSERT INTO crisis (id_session, id_type_crisis, id_action, id_student, required_human, notes)
+            VALUES (:session_id::uuid, :type_crisis_id::uuid, :action_id::uuid, :student_id::uuid, :req_human, :notes)
+        """),
+        {
+            "session_id":      session_id,
+            "type_crisis_id":  str(tc[0]),
+            "action_id":       str(ac[0]),
+            "student_id":      student_id,
+            "req_human":       nivel in ("moderada", "grave"),
+            "notes":           f"Crisis {nivel} detectada automáticamente",
+        },
+    )
 
 
-# --- Endpoints REST para consultar historial de monitoreo ---
+# ── REST: historial y estado ─────────────────────────────────
 
 @router.get("/history/{session_id}", response_model=list[MonitoringResponse])
-async def obtener_historial_monitoreo(
-    session_id: int,
-    limit: int = 100,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+async def historial_monitoreo(
+    session_id: str,
+    limit:      int = 100,
+    db:         Session = Depends(get_db),
+    cu:         TokenData = Depends(get_current_user),
 ):
-    """Obtiene el historial de monitoreo de una sesión."""
     rows = db.execute(
         text("""
-            SELECT id, session_id, student_id, emocion, nivel_atencion, stimming,
-                presion_tactil, velocidad_clics, timestamp, created_at
+            SELECT id_monitoring, id_session, emotion, attention_level, stimming,
+                   tactile_pressure, action_taken, detected_at
             FROM monitoring
-            WHERE session_id = :sid
-            ORDER BY timestamp DESC
+            WHERE id_session = :sid::uuid
+            ORDER BY detected_at DESC
             LIMIT :limit
         """),
         {"sid": session_id, "limit": limit},
@@ -274,32 +256,28 @@ async def obtener_historial_monitoreo(
 
     return [
         MonitoringResponse(
-            id=r[0], session_id=r[1], student_id=r[2], emocion=r[3],
-            nivel_atencion=r[4], stimming=r[5], presion_tactil=r[6],
-            velocidad_clics=r[7], timestamp=r[8], created_at=r[9],
+            id_monitoring=str(r[0]), id_session=str(r[1]),
+            emotion=r[2], attention_level=r[3], stimming=r[4],
+            tactile_pressure=r[5], action_taken=r[6], detected_at=r[7],
         )
         for r in rows
     ]
 
 
 @router.get("/status/{student_id}")
-async def obtener_estado_actual(
-    student_id: int,
-    db: Session = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
+async def estado_actual(
+    student_id: str,
+    cu:         TokenData = Depends(get_current_user),
 ):
-    """Obtiene el estado actual del monitoreo de un estudiante."""
     state = adaptation_engine._states.get(student_id)
     if not state:
-        return {"status": "offline", "mensaje": "El estudiante no tiene una sesión de monitoreo activa"}
-
+        return {"status": "offline", "mensaje": "Sin sesión de monitoreo activa"}
     return {
-        "status": "online",
-        "student_id": student_id,
-        "session_id": state.session_id,
+        "status":         "online",
+        "student_id":     student_id,
+        "session_id":     state.session_id,
         "emocion_actual": state.emocion_actual.value,
         "nivel_atencion": state.nivel_atencion,
-        "stimming": state.stimming,
-        "presion_tactil": state.presion_tactil,
-        "ultima_crisis": state.ultima_crisis_nivel.value if state.ultima_crisis_nivel else None,
+        "stimming":       state.stimming,
+        "ultima_crisis":  state.ultima_crisis_nivel.value if state.ultima_crisis_nivel else None,
     }

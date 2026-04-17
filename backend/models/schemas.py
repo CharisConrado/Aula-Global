@@ -1,122 +1,159 @@
 """
-Aula Global — Modelos Pydantic para validación de datos
-Corresponden a las 20 tablas del schema de Supabase.
+Aula Global — Modelos Pydantic
+Ajustados al schema real de Supabase (UUIDs, nombres de columnas correctos).
 """
 
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime, date
 from enum import Enum
 
 
 # ============================================================
-# ENUMS
+# ENUMS  (valores exactos del CHECK en la base de datos)
 # ============================================================
 
 class RolUsuario(str, Enum):
-    estudiante = "estudiante"
-    tutor = "tutor"
-    profesional = "profesional"
-    admin = "admin"
-
-
-class TipoDiagnostico(str, Enum):
-    tdah = "TDAH"
-    tea = "TEA"
-    tdah_tea = "TDAH_TEA"
-    otro = "otro"
-
-
-class TipoActividad(str, Enum):
-    quiz = "quiz"
-    arrastrar = "arrastrar"
-    completar = "completar"
-    colorear = "colorear"
-    audio = "audio"
-    video = "video"
-    lectura = "lectura"
+    tutor        = "tutor"
+    profesional  = "profesional"
+    admin        = "admin"
 
 
 class NivelDificultad(str, Enum):
-    facil = "facil"
-    medio = "medio"
+    facil   = "facil"
+    medio   = "medio"
     dificil = "dificil"
 
 
+class PublicationStatus(str, Enum):
+    borrador  = "borrador"
+    publicado = "publicado"
+    archivado = "archivado"
+
+
 class Emocion(str, Enum):
-    neutro = "neutro"
-    feliz = "feliz"
+    neutro    = "neutro"
+    feliz     = "feliz"
     frustrado = "frustrado"
-    ansioso = "ansioso"
+    ansioso   = "ansioso"
     distraido = "distraido"
     estresado = "estresado"
-    calmado = "calmado"
+    calmado   = "calmado"
+
+
+class AccionMonitoreo(str, Enum):
+    ninguna                  = "ninguna"
+    simplificar_contenido    = "simplificar_contenido"
+    pausa_visual             = "pausa_visual"
+    cambiar_formato          = "cambiar_formato"
+    mostrar_pista            = "mostrar_pista"
+    alerta_tutor             = "alerta_tutor"
+    intervencion_profesional = "intervencion_profesional"
+    finalizar_sesion         = "finalizar_sesion"
+
+# Alias usado por el motor de adaptación
+AccionAdaptacion = AccionMonitoreo
 
 
 class NivelCrisis(str, Enum):
-    leve = "leve"
+    leve     = "leve"
     moderada = "moderada"
-    grave = "grave"
+    grave    = "grave"
 
 
 class TipoIntervencion(str, Enum):
-    crisis_leve = "crisis_leve"
-    crisis_grave = "crisis_grave"
+    crisis_leve      = "crisis_leve"
+    crisis_grave     = "crisis_grave"
     consulta_externa = "consulta_externa"
-    seguimiento = "seguimiento"
+    seguimiento      = "seguimiento"
 
 
-class AccionAdaptacion(str, Enum):
-    simplificar_contenido = "simplificar_contenido"
-    pausa_visual = "pausa_visual"
-    cambiar_formato = "cambiar_formato"
-    mostrar_pista = "mostrar_pista"
-    adaptar_contenido = "adaptar_contenido"
-    alerta_tutor = "alerta_tutor"
-    intervencion_profesional = "intervencion_profesional"
+class EstadoIntervencion(str, Enum):
+    pendiente  = "pendiente"
+    en_curso   = "en_curso"
+    resuelta   = "resuelta"
+
+
+class EstadoSesion(str, Enum):
+    activa       = "activa"
+    completada   = "completada"
+    interrumpida = "interrumpida"
+    crisis       = "crisis"
+
+
+class RelationshipType(str, Enum):
+    familiar             = "familiar"
+    profesional_externo  = "profesional_externo"
+    cuidador             = "cuidador"
+
+
+class ValidationStatus(str, Enum):
+    pendiente  = "pendiente"
+    aprobado   = "aprobado"
+    rechazado  = "rechazado"
+
+
+class AccountStatus(str, Enum):
+    activo     = "activo"
+    inactivo   = "inactivo"
+    suspendido = "suspendido"
 
 
 # ============================================================
-# AUTENTICACIÓN
+# AUTH
 # ============================================================
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email:    EmailStr
     password: str = Field(..., min_length=6)
 
 
-class RegisterRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(..., min_length=6)
-    nombre: str = Field(..., min_length=2, max_length=100)
-    apellido: str = Field(..., min_length=2, max_length=100)
-    rol: RolUsuario
+class RegisterTutorRequest(BaseModel):
+    email:             EmailStr
+    password:          str = Field(..., min_length=6)
+    full_name:         str = Field(..., min_length=2, max_length=200)
+    # Se acepta cualquier string libre (familiar, padre, docente, cuidador, etc.)
+    relationship_type: Optional[str] = "familiar"
+    phone:             Optional[str] = None
+
+
+class RegisterProfessionalRequest(BaseModel):
+    email:          EmailStr
+    password:       str = Field(..., min_length=6)
+    full_name:      str = Field(..., min_length=2, max_length=200)
+    # Campos opcionales para no romper el formulario de registro rápido
+    license_number: Optional[str] = None
+    speciality:     Optional[str] = None   # columna en DB
+    specialty:      Optional[str] = None   # alias del frontend
+    phone:          Optional[str] = None
+
+    @property
+    def resolved_speciality(self) -> Optional[str]:
+        """Devuelve speciality o specialty, el que venga informado."""
+        return self.speciality or self.specialty
 
 
 class TokenResponse(BaseModel):
     access_token: str
-    token_type: str = "bearer"
-    rol: RolUsuario
-    user_id: int
+    token_type:   str = "bearer"
+    rol:          RolUsuario
+    user_id:      str   # UUID
 
 
 class TokenData(BaseModel):
-    user_id: int
-    email: str
-    rol: RolUsuario
+    user_id: str        # UUID del tutor / profesional
+    email:   str
+    rol:     RolUsuario
 
 
 # ============================================================
-# GRADO (degree)
+# DEGREE
 # ============================================================
 
-class DegreeBase(BaseModel):
-    name: str = Field(..., max_length=50)
-    grade_number: int = Field(..., ge=1, le=5)
-
-
-class DegreeResponse(DegreeBase):
-    id: int
+class DegreeResponse(BaseModel):
+    id_degree:  str
+    grade_name: str
+    level:      int
     created_at: Optional[datetime] = None
 
     class Config:
@@ -124,549 +161,497 @@ class DegreeResponse(DegreeBase):
 
 
 # ============================================================
-# TIPO DE DIAGNÓSTICO (type_diagnosis)
+# TUTOR
 # ============================================================
-
-class TypeDiagnosisBase(BaseModel):
-    name: str = Field(..., max_length=100)
-    description: Optional[str] = None
-
-
-class TypeDiagnosisResponse(TypeDiagnosisBase):
-    id: int
-
-    class Config:
-        from_attributes = True
-
-
-# ============================================================
-# TIPO DE ACTIVIDAD (type_activity)
-# ============================================================
-
-class TypeActivityBase(BaseModel):
-    name: str = Field(..., max_length=50)
-    description: Optional[str] = None
-
-
-class TypeActivityResponse(TypeActivityBase):
-    id: int
-
-    class Config:
-        from_attributes = True
-
-
-# ============================================================
-# PROFESIONAL (professional)
-# ============================================================
-
-class ProfessionalBase(BaseModel):
-    nombre: str = Field(..., max_length=100)
-    apellido: str = Field(..., max_length=100)
-    email: EmailStr
-    especialidad: Optional[str] = None
-    licencia: Optional[str] = None
-
-
-class ProfessionalCreate(ProfessionalBase):
-    password: str = Field(..., min_length=6)
-
-
-class ProfessionalResponse(ProfessionalBase):
-    id: int
-    is_active: bool = True
-    created_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
-
-
-# ============================================================
-# TUTOR (tutor)
-# ============================================================
-
-class TutorBase(BaseModel):
-    nombre: str = Field(..., max_length=100)
-    apellido: str = Field(..., max_length=100)
-    email: EmailStr
-    telefono: Optional[str] = Field(None, max_length=20)
-    es_profesional: bool = False
-    relacion: Optional[str] = Field(None, max_length=50)
-
-
-class TutorCreate(TutorBase):
-    password: str = Field(..., min_length=6)
-
 
 class TutorUpdate(BaseModel):
-    nombre: Optional[str] = Field(None, max_length=100)
-    apellido: Optional[str] = Field(None, max_length=100)
-    telefono: Optional[str] = Field(None, max_length=20)
-    relacion: Optional[str] = Field(None, max_length=50)
+    full_name:         Optional[str] = None
+    phone:             Optional[str] = None
+    relationship_type: Optional[RelationshipType] = None
 
 
-class TutorResponse(TutorBase):
-    id: int
-    is_active: bool = True
-    created_at: Optional[datetime] = None
+class TutorResponse(BaseModel):
+    id_tutor:          str
+    full_name:         str
+    email:             str
+    relationship_type: str
+    phone:             Optional[str] = None
+    is_professional:   bool
+    is_active:         bool
+    created_at:        Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
 # ============================================================
-# ESTUDIANTE (student)
+# PROFESSIONAL
 # ============================================================
 
-class StudentBase(BaseModel):
-    nombre: str = Field(..., max_length=100)
-    apellido: str = Field(..., max_length=100)
-    fecha_nacimiento: date
-    grado_id: int
-    tutor_id: int
-    username: str = Field(..., min_length=3, max_length=50)
+class ProfessionalResponse(BaseModel):
+    id_professional:     str
+    full_name:           str
+    email:               str
+    license_number:      str
+    speciality:          str
+    phone:               Optional[str] = None
+    verification_status: str
+    is_active:           bool
+    created_at:          Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
 
 
-class StudentCreate(StudentBase):
-    password: str = Field(..., min_length=4)
+# ============================================================
+# STUDENT
+# ============================================================
+
+class StudentCreate(BaseModel):
+    full_name:  str = Field(..., min_length=2, max_length=200)
+    birth_date: date
+    id_degree:  str   # UUID
 
 
 class StudentUpdate(BaseModel):
-    nombre: Optional[str] = Field(None, max_length=100)
-    apellido: Optional[str] = Field(None, max_length=100)
-    fecha_nacimiento: Optional[date] = None
-    grado_id: Optional[int] = None
+    full_name:      Optional[str] = None
+    birth_date:     Optional[date] = None
+    id_degree:      Optional[str] = None
+    account_status: Optional[AccountStatus] = None
 
 
-class StudentResponse(StudentBase):
-    id: int
-    is_active: bool = True
-    created_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
-
-
-# ============================================================
-# DIAGNÓSTICO INICIAL (initial_diagnosis)
-# ============================================================
-
-class InitialDiagnosisBase(BaseModel):
-    student_id: int
-    type_diagnosis_id: int
-    descripcion: Optional[str] = None
-    fecha_diagnostico: Optional[date] = None
-    profesional_externo: Optional[str] = None
-
-
-class InitialDiagnosisCreate(InitialDiagnosisBase):
-    pass
-
-
-class InitialDiagnosisResponse(InitialDiagnosisBase):
-    id: int
-    created_at: Optional[datetime] = None
+class StudentResponse(BaseModel):
+    id_student:     str
+    full_name:      str
+    birth_date:     date
+    id_degree:      str
+    account_status: str
+    avatar_url:     Optional[str] = None
+    created_at:     Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
 # ============================================================
-# VALIDACIÓN APROBADA (approved_validation)
+# INITIAL DIAGNOSIS
 # ============================================================
 
-class ApprovedValidationBase(BaseModel):
-    student_id: int
-    professional_id: int
-    diagnosis_id: int
-    accepts_camera: bool = False
-    notas: Optional[str] = None
+class InitialDiagnosisCreate(BaseModel):
+    id_student:        str
+    id_type_diagnosis: str
+    description:       Optional[str] = None
+    document_url:      Optional[str] = None
 
 
-class ApprovedValidationCreate(ApprovedValidationBase):
-    pass
-
-
-class ApprovedValidationResponse(ApprovedValidationBase):
-    id: int
-    fecha_validacion: Optional[datetime] = None
-    created_at: Optional[datetime] = None
+class InitialDiagnosisResponse(BaseModel):
+    id_diagnosis:      str
+    id_student:        str
+    id_type_diagnosis: str
+    description:       Optional[str] = None
+    document_url:      Optional[str] = None
+    registration_date: Optional[datetime] = None
+    created_at:        Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
 # ============================================================
-# PERFIL (profile)
+# APPROVED VALIDATION
 # ============================================================
 
-class ProfileBase(BaseModel):
-    student_id: int
-    sensibilidad_visual: Optional[str] = Field(None, max_length=20)
-    sensibilidad_auditiva: Optional[str] = Field(None, max_length=20)
-    nivel_atencion_base: Optional[float] = Field(None, ge=0, le=1)
-    prefiere_formato: Optional[str] = Field(None, max_length=30)
-    tiempo_max_actividad: Optional[int] = Field(None, ge=1, le=120)
-    necesita_pausas: bool = True
-    frecuencia_pausas: Optional[int] = Field(None, ge=1, le=60)
-    alto_contraste: bool = False
-    tamano_fuente: Optional[str] = Field("grande", max_length=20)
-    notas_adicionales: Optional[str] = None
+class ApprovedValidationCreate(BaseModel):
+    id_student:             str
+    id_tutor:               str
+    id_professional:        Optional[str] = None
+    accepts_camera:         bool = False
+    access_level:           str = "basico"
+    clinical_notes:         Optional[str] = None
 
 
-class ProfileCreate(ProfileBase):
-    pass
+class ApprovedValidationResponse(BaseModel):
+    id_validation:       str
+    id_student:          str
+    id_tutor:            str
+    id_professional:     Optional[str] = None
+    accepts_camera:      bool
+    access_level:        str
+    validation_status:   str
+    clinical_notes:      Optional[str] = None
+    link_date:           Optional[datetime] = None
+    created_at:          Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+# PROFILE
+# ============================================================
+
+class ProfileCreate(BaseModel):
+    id_student:      str
+    volume_level:    int = Field(default=5, ge=0, le=10)
+    visual_contrast: str = "normal"
+    feedback_type:   str = "visual"
+    font_size:       str = "normal"
+    animation_speed: str = "normal"
+    max_session_min: int = 30
+    needs_breaks:    bool = True
+    break_interval:  int = 10
 
 
 class ProfileUpdate(BaseModel):
-    sensibilidad_visual: Optional[str] = None
-    sensibilidad_auditiva: Optional[str] = None
-    nivel_atencion_base: Optional[float] = None
-    prefiere_formato: Optional[str] = None
-    tiempo_max_actividad: Optional[int] = None
-    necesita_pausas: Optional[bool] = None
-    frecuencia_pausas: Optional[int] = None
-    alto_contraste: Optional[bool] = None
-    tamano_fuente: Optional[str] = None
-    notas_adicionales: Optional[str] = None
+    volume_level:    Optional[int]  = Field(None, ge=0, le=10)
+    visual_contrast: Optional[str]  = None
+    feedback_type:   Optional[str]  = None
+    font_size:       Optional[str]  = None
+    animation_speed: Optional[str]  = None
+    max_session_min: Optional[int]  = None
+    needs_breaks:    Optional[bool] = None
+    break_interval:  Optional[int]  = None
 
 
-class ProfileResponse(ProfileBase):
-    id: int
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+class ProfileResponse(BaseModel):
+    id_profile:      str
+    id_student:      str
+    volume_level:    int
+    visual_contrast: str
+    feedback_type:   str
+    font_size:       Optional[str] = None
+    animation_speed: Optional[str] = None
+    max_session_min: Optional[int] = None
+    needs_breaks:    Optional[bool] = None
+    break_interval:  Optional[int] = None
+    is_active:       bool
+    start_date:      Optional[datetime] = None
+    created_at:      Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
-
-# ============================================================
-# HISTORIAL DE PERFIL (profile_history)
-# ============================================================
 
 class ProfileHistoryResponse(BaseModel):
-    id: int
-    profile_id: int
-    campo_modificado: str
-    valor_anterior: Optional[str] = None
-    valor_nuevo: Optional[str] = None
-    modificado_por: Optional[int] = None
-    fecha_modificacion: Optional[datetime] = None
+    id_history:      str
+    id_profile:      str
+    changed_by:      Optional[str] = None
+    changed_by_role: Optional[str] = None
+    previous_data:   Optional[Any] = None
+    new_data:        Optional[Any] = None
+    change_reason:   Optional[str] = None
+    created_at:      Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
 # ============================================================
-# MATERIA (subject)
+# SUBJECT
 # ============================================================
 
-class SubjectBase(BaseModel):
-    name: str = Field(..., max_length=100)
-    degree_id: int
-    description: Optional[str] = None
+class SubjectCreate(BaseModel):
+    id_degree:    str
+    subject_name: str = Field(..., min_length=2)
+    description:  Optional[str] = None
+    icon:         Optional[str] = None
+    color:        Optional[str] = None
 
 
-class SubjectCreate(SubjectBase):
-    pass
-
-
-class SubjectResponse(SubjectBase):
-    id: int
-    created_at: Optional[datetime] = None
+class SubjectResponse(BaseModel):
+    id_subject:   str
+    id_degree:    str
+    subject_name: str
+    description:  Optional[str] = None
+    icon:         Optional[str] = None
+    color:        Optional[str] = None
+    is_active:    bool
+    created_at:   Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
 # ============================================================
-# ACTIVIDAD (activity)
+# ACTIVITY
 # ============================================================
 
-class ActivityBase(BaseModel):
-    titulo: str = Field(..., max_length=200)
-    descripcion: Optional[str] = None
-    subject_id: int
-    type_activity_id: int
-    dificultad: NivelDificultad = NivelDificultad.medio
-    contenido_json: Optional[dict] = None
-    duracion_estimada: Optional[int] = Field(None, ge=1, le=120)
-    puntos: int = Field(default=10, ge=0, le=100)
-    orden: int = Field(default=1, ge=1)
-
-
-class ActivityCreate(ActivityBase):
-    pass
+class ActivityCreate(BaseModel):
+    id_subject:         str
+    id_type_activity:   str
+    title:              str = Field(..., min_length=2)
+    description:        Optional[str] = None
+    difficulty_level:   NivelDificultad = NivelDificultad.facil
+    content:            Optional[dict] = None
+    estimated_minutes:  int = Field(default=10, ge=1, le=120)
+    publication_status: PublicationStatus = PublicationStatus.borrador
+    thumbnail_url:      Optional[str] = None
 
 
 class ActivityUpdate(BaseModel):
-    titulo: Optional[str] = None
-    descripcion: Optional[str] = None
-    dificultad: Optional[NivelDificultad] = None
-    contenido_json: Optional[dict] = None
-    duracion_estimada: Optional[int] = None
-    puntos: Optional[int] = None
-    orden: Optional[int] = None
+    title:              Optional[str] = None
+    description:        Optional[str] = None
+    difficulty_level:   Optional[NivelDificultad] = None
+    content:            Optional[dict] = None
+    estimated_minutes:  Optional[int] = None
+    publication_status: Optional[PublicationStatus] = None
+    thumbnail_url:      Optional[str] = None
 
 
-class ActivityResponse(ActivityBase):
-    id: int
-    is_active: bool = True
-    created_at: Optional[datetime] = None
+class ActivityResponse(BaseModel):
+    id_activity:        str
+    id_subject:         str
+    id_type_activity:   str
+    title:              str
+    description:        Optional[str] = None
+    difficulty_level:   str
+    content:            Optional[Any] = None
+    estimated_minutes:  Optional[int] = None
+    publication_status: str
+    thumbnail_url:      Optional[str] = None
+    created_at:         Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
 # ============================================================
-# SESIÓN (session)
+# SESSION
 # ============================================================
 
 class SessionCreate(BaseModel):
-    student_id: int
+    id_student:   str
+    session_type: str = "normal"
+    device:       Optional[str] = None
+    device_type:  Optional[str] = None
 
 
 class SessionResponse(BaseModel):
-    id: int
-    student_id: int
-    fecha_inicio: Optional[datetime] = None
-    fecha_fin: Optional[datetime] = None
-    duracion_total: Optional[int] = None
-    actividades_completadas: int = 0
-    nota_cuantitativa: Optional[float] = None
-    nota_cualitativa: Optional[str] = None
-    crisis_ocurridas: int = 0
-    intervenciones_realizadas: int = 0
-    is_active: bool = True
-    created_at: Optional[datetime] = None
+    id_session:   str
+    id_student:   str
+    session_type: str
+    start_time:   Optional[datetime] = None
+    end_time:     Optional[datetime] = None
+    duration_sec: Optional[int] = None
+    device:       Optional[str] = None
+    device_type:  Optional[str] = None
+    status:       str
+    created_at:   Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
 class SessionClose(BaseModel):
-    nota_cualitativa: Optional[str] = None
+    status: str = "completada"
 
 
 # ============================================================
-# ACTIVIDAD DEL ESTUDIANTE (student_activity)
+# STUDENT ACTIVITY
 # ============================================================
 
 class StudentActivityCreate(BaseModel):
-    session_id: int
-    activity_id: int
-    student_id: int
+    id_student:  str
+    id_activity: str
+    id_session:  str
 
 
 class StudentActivityUpdate(BaseModel):
-    nota: Optional[float] = Field(None, ge=0, le=5)
-    completada: bool = False
-    tiempo_dedicado: Optional[int] = None
-    intentos: int = 1
-    formato_usado: Optional[str] = None
-    stimming_detectado: bool = False
-    presion_tactil: Optional[str] = None
-    nivel_atencion_promedio: Optional[float] = None
-    respuestas_json: Optional[dict] = None
+    score:             Optional[float] = Field(None, ge=0, le=5)
+    achievement_level: Optional[str]  = None
+    success_rate:      Optional[float] = Field(None, ge=0, le=100)
+    stress_level:      Optional[int]  = Field(None, ge=0, le=10)
+    time_spent_sec:    Optional[int]  = None
+    had_crisis:        Optional[bool] = None
+    tactile_pressure:  Optional[bool] = None
+    stimming_detected: Optional[bool] = None
+    format_used:       Optional[str]  = None
+    qualitative_notes: Optional[str]  = None
+    is_completed:      Optional[bool] = None
 
 
 class StudentActivityResponse(BaseModel):
-    id: int
-    session_id: int
-    activity_id: int
-    student_id: int
-    nota: Optional[float] = None
-    completada: bool = False
-    tiempo_dedicado: Optional[int] = None
-    intentos: int = 1
-    formato_usado: Optional[str] = None
-    stimming_detectado: bool = False
-    presion_tactil: Optional[str] = None
-    nivel_atencion_promedio: Optional[float] = None
-    respuestas_json: Optional[dict] = None
-    fecha_inicio: Optional[datetime] = None
-    fecha_fin: Optional[datetime] = None
-    created_at: Optional[datetime] = None
+    id_student_activity: str
+    id_student:          str
+    id_activity:         str
+    id_session:          str
+    score:               Optional[float] = None
+    achievement_level:   str
+    success_rate:        Optional[float] = None
+    stress_level:        Optional[int]   = None
+    time_spent_sec:      Optional[int]   = None
+    had_crisis:          bool
+    tactile_pressure:    bool
+    stimming_detected:   bool
+    format_used:         Optional[str]   = None
+    qualitative_notes:   Optional[str]   = None
+    completion_date:     Optional[datetime] = None
+    is_completed:        bool
 
     class Config:
         from_attributes = True
 
 
 # ============================================================
-# MONITOREO (monitoring)
+# MONITORING
 # ============================================================
 
 class MonitoringData(BaseModel):
-    """Datos enviados desde el frontend via WebSocket cada 2 segundos."""
-    session_id: int
-    student_id: int
-    emocion: Emocion = Emocion.neutro
-    nivel_atencion: float = Field(default=0.5, ge=0, le=1)
-    stimming: bool = False
-    presion_tactil: Optional[float] = Field(None, ge=0, le=1)
-    velocidad_clics: Optional[float] = None
-    landmarks_procesados: Optional[dict] = None
+    """Datos enviados desde MediaPipe en el navegador cada 2 segundos."""
+    id_session:       str
+    emotion:          Emocion = Emocion.neutro
+    attention_level:  float   = Field(default=0.5, ge=0, le=1)
+    stimming:         bool    = False
+    tactile_pressure: bool    = False   # Booleano en la DB
 
 
 class MonitoringResponse(BaseModel):
-    id: int
-    session_id: int
-    student_id: int
-    emocion: str
-    nivel_atencion: float
-    stimming: bool
-    presion_tactil: Optional[float] = None
-    velocidad_clics: Optional[float] = None
-    timestamp: Optional[datetime] = None
-    created_at: Optional[datetime] = None
+    id_monitoring:   str
+    id_session:      str
+    emotion:         str
+    attention_level: Optional[float] = None
+    stimming:        bool
+    tactile_pressure: bool
+    action_taken:    Optional[str]   = None
+    detected_at:     Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
 # ============================================================
-# ACCIÓN EN TIEMPO REAL (action_rto)
+# ACTION RTO
 # ============================================================
 
-class ActionRtoBase(BaseModel):
-    session_id: int
-    student_id: int
-    accion: AccionAdaptacion
-    motivo: Optional[str] = None
-    datos_contexto: Optional[dict] = None
-
-
-class ActionRtoResponse(ActionRtoBase):
-    id: int
-    ejecutada: bool = False
-    timestamp: Optional[datetime] = None
+class ActionRtoResponse(BaseModel):
+    id_action:   str
+    action_name: str
+    description: Optional[str] = None
+    auto_apply:  bool
+    created_at:  Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
 # ============================================================
-# CRISIS (crisis)
+# TYPE CRISIS
+# ============================================================
+
+class TypeCrisisResponse(BaseModel):
+    id_type_crisis: str
+    name:           str
+    description:    Optional[str] = None
+    severity_level: int
+    created_at:     Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+# CRISIS
 # ============================================================
 
 class CrisisCreate(BaseModel):
-    session_id: int
-    student_id: int
-    nivel: NivelCrisis
-    emocion_detectada: Optional[str] = None
-    descripcion: Optional[str] = None
-    datos_monitoreo: Optional[dict] = None
+    id_session:      str
+    id_student:      str
+    id_type_crisis:  str
+    id_action:       str
+    notes:           Optional[str] = None
+    required_human:  bool = False
 
 
 class CrisisUpdate(BaseModel):
-    resuelta: bool = False
-    resolucion: Optional[str] = None
-    resuelta_por: Optional[int] = None
+    resolved_at:    Optional[datetime] = None
+    was_effective:  Optional[bool]     = None
+    required_human: Optional[bool]     = None
+    notes:          Optional[str]      = None
 
 
 class CrisisResponse(BaseModel):
-    id: int
-    session_id: int
-    student_id: int
-    nivel: str
-    emocion_detectada: Optional[str] = None
-    descripcion: Optional[str] = None
-    resuelta: bool = False
-    resolucion: Optional[str] = None
-    resuelta_por: Optional[int] = None
-    fecha_inicio: Optional[datetime] = None
-    fecha_fin: Optional[datetime] = None
-    created_at: Optional[datetime] = None
+    id_crisis:            str
+    id_session:           str
+    id_type_crisis:       str
+    id_action:            str
+    id_student:           str
+    detection_timestamp:  Optional[datetime] = None
+    resolved_at:          Optional[datetime] = None
+    was_effective:        Optional[bool]     = None
+    required_human:       bool
+    notes:                Optional[str]      = None
+    created_at:           Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
 # ============================================================
-# INTERVENCIÓN (intervention)
+# INTERVENTION
 # ============================================================
 
 class InterventionCreate(BaseModel):
-    crisis_id: Optional[int] = None
-    student_id: int
-    professional_id: Optional[int] = None
-    tipo: TipoIntervencion
-    descripcion: Optional[str] = None
+    id_session:      str
+    id_crisis:       Optional[str] = None
+    id_tutor:        Optional[str] = None
+    id_professional: Optional[str] = None
+    help_type:       TipoIntervencion
+    description:     Optional[str] = None
+    session_moment:  Optional[str] = None
 
 
 class InterventionUpdate(BaseModel):
-    completada: bool = False
-    notas: Optional[str] = None
-    resultado: Optional[str] = None
+    status:      Optional[EstadoIntervencion] = None
+    description: Optional[str]               = None
+    resolved_at: Optional[datetime]          = None
 
 
 class InterventionResponse(BaseModel):
-    id: int
-    crisis_id: Optional[int] = None
-    student_id: int
-    professional_id: Optional[int] = None
-    tipo: str
-    descripcion: Optional[str] = None
-    completada: bool = False
-    notas: Optional[str] = None
-    resultado: Optional[str] = None
-    fecha_inicio: Optional[datetime] = None
-    fecha_fin: Optional[datetime] = None
-    created_at: Optional[datetime] = None
+    id_intervention: str
+    id_session:      str
+    id_crisis:       Optional[str] = None
+    id_tutor:        Optional[str] = None
+    id_professional: Optional[str] = None
+    help_type:       str
+    session_moment:  Optional[str] = None
+    description:     Optional[str] = None
+    status:          str
+    resolved_at:     Optional[datetime] = None
+    created_at:      Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
 # ============================================================
-# RESPONSABLE PRINCIPAL (responsible_principal)
+# RESPONSIBLE PRINCIPAL
 # ============================================================
 
-class ResponsiblePrincipalBase(BaseModel):
-    student_id: int
-    tutor_id: int
-    es_principal: bool = True
-
-
-class ResponsiblePrincipalResponse(ResponsiblePrincipalBase):
-    id: int
-    created_at: Optional[datetime] = None
+class ResponsiblePrincipalResponse(BaseModel):
+    id_responsible: str
+    id_tutor:       str
+    id_student:     str
+    assigned_date:  Optional[datetime] = None
+    is_active:      bool
+    created_at:     Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
 # ============================================================
-# TIPO DE CRISIS (type_crisis)
-# ============================================================
-
-class TypeCrisisBase(BaseModel):
-    name: str = Field(..., max_length=100)
-    description: Optional[str] = None
-    nivel_default: NivelCrisis = NivelCrisis.leve
-
-
-class TypeCrisisResponse(TypeCrisisBase):
-    id: int
-
-    class Config:
-        from_attributes = True
-
-
-# ============================================================
-# RESPUESTAS DE ADAPTACIÓN (WebSocket)
+# WEBSOCKET — Motor de adaptación
 # ============================================================
 
 class AdaptationAction(BaseModel):
-    """Acción de adaptación enviada al frontend via WebSocket."""
-    accion: AccionAdaptacion
+    accion: str
     motivo: str
-    datos: Optional[dict] = None
+    datos:  Optional[dict] = None
 
 
 class MonitoringWebSocketResponse(BaseModel):
-    """Respuesta completa del WebSocket de monitoreo."""
-    status: str = "ok"
-    acciones: list[AdaptationAction] = []
-    emocion_actual: Emocion = Emocion.neutro
+    status:         str = "ok"
+    acciones:       list[AdaptationAction] = []
+    emocion_actual: str = "neutro"
     nivel_atencion: float = 0.5
-    alerta_crisis: Optional[NivelCrisis] = None
+    alerta_crisis:  Optional[str] = None
