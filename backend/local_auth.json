@@ -1,0 +1,18 @@
+{
+  "maria3@gmail.com": {
+    "user_id": "7347a24f-c821-442c-bbd1-566b2d522eb1",
+    "password_hash": "$2b$12$hcitZvh48EvkA9uAsC0R2OIAYWggSUQAOW8elGIXDiEJWWiIq7JiK"
+  },
+  "charis3@gmail.com": {
+    "user_id": "1dd5e6d5-38e1-4515-bea1-8b65f31c733f",
+    "password_hash": "$2b$12$VlaTSYSZcilvz4QWgKvWb.QIYZOMFBZ.cevFVt2g38jLsxmZAlX3i"
+  },
+  "rocioc@gmail.com": {
+    "user_id": "b486b0f0-4486-4f8f-8ad8-3af08ec74965",
+    "password_hash": "$2b$12$ycWqeSS951ZbysrdYTfhz.R4w8Ovt1D5bczEw3M/eFeD7Yv1hhLfq"
+  },
+  "santiala@gmail.com": {
+    "user_id": "12ad839d-b8b3-498e-b9a1-2760946d72b5",
+    "password_hash": "$2b$12$xQw0QAiZLWlH4MeXz0Jk6OJIpvfYZcYMTx9Jk9nvJBY2vYYkQs5W2"
+  }
+}

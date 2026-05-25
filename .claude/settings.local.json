@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"D:\\\\Users\\\\TRABAJO\\\\Documents\\\\SEPTIMO SEMESTRE\\\\PROYECTO\\\\frontend\\\\src\\\\app\" /s /b /a-d)",
+      "Bash(findstr \"\\\\.tsx$\")",
+      "Bash(Get-ChildItem -Path \"D:\\\\Users\\\\TRABAJO\\\\Documents\\\\SEPTIMO SEMESTRE\\\\PROYECTO\\\\frontend\\\\src\\\\app\" -Recurse -Filter \"*.tsx\")",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(npx tsc *)",
+      "Bash(python -c ' *)"
+    ]
+  }
+}

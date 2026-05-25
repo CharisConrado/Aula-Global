@@ -5,7 +5,9 @@ Columnas: id_activity, id_subject, id_type_activity, title, difficulty_level,
 """
 
 import json
-from fastapi import APIRouter, Depends, HTTPException
+import uuid
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import Optional
@@ -20,6 +22,23 @@ from models.schemas import (
 from services.auth_service import get_current_user, require_role
 
 router = APIRouter()
+
+_UPLOAD_ROOT      = Path(__file__).parent.parent / "uploads"
+_ACTIVITY_FOLDER  = _UPLOAD_ROOT / "activities"
+_ACTIVITY_FOLDER.mkdir(parents=True, exist_ok=True)
+
+_MIMES_DOC = {
+    "application/pdf": ".pdf",
+    "image/jpeg":      ".jpg",
+    "image/png":       ".png",
+    "image/webp":      ".webp",
+}
+_MIMES_VIDEO = {
+    "video/mp4":  ".mp4",
+    "video/webm": ".webm",
+}
+_MAX_DOC_SIZE   = 10 * 1024 * 1024   # 10 MB
+_MAX_VIDEO_SIZE = 50 * 1024 * 1024   # 50 MB
 
 
 def _row_to_activity(r) -> ActivityResponse:
@@ -99,7 +118,7 @@ async def crear_materia(
     row = db.execute(
         text("""
             INSERT INTO subject (id_degree, subject_name, description, icon, color, is_active)
-            VALUES (:id_degree::uuid, :subject_name, :description, :icon, :color, true)
+            VALUES (CAST(:id_degree AS uuid), :subject_name, :description, :icon, :color, true)
             RETURNING id_subject, id_degree, subject_name, description, icon, color, is_active, created_at
         """),
         {
@@ -119,11 +138,49 @@ async def listar_materias(
     query  = "SELECT id_subject, id_degree, subject_name, description, icon, color, is_active, created_at FROM subject WHERE is_active = true"
     params: dict = {}
     if degree_id:
-        query += " AND id_degree = :degree_id::uuid"
+        query += " AND id_degree = CAST(:degree_id AS uuid)"
         params["degree_id"] = degree_id
     query += " ORDER BY subject_name ASC"
     rows = db.execute(text(query), params).fetchall()
     return [_row_to_subject(r) for r in rows]
+
+
+# ── Upload de archivos para actividades ──────────────────────
+
+@router.post("/upload-file")
+async def subir_archivo_actividad(
+    file:      UploadFile = File(...),
+    file_type: str        = Form(...),   # "presentacion" | "contenido" | "solucion"
+    cu:        TokenData  = Depends(require_role(RolUsuario.admin, RolUsuario.profesional)),
+):
+    """Sube un archivo (PDF, imagen o video) asociado a una actividad."""
+    mime = (file.content_type or "").lower()
+    is_video = file_type == "contenido" and mime in _MIMES_VIDEO
+
+    if is_video:
+        allowed = _MIMES_VIDEO
+        max_size = _MAX_VIDEO_SIZE
+    else:
+        allowed = _MIMES_DOC
+        max_size = _MAX_DOC_SIZE
+
+    if mime not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Formato no permitido para '{file_type}'. Tipos aceptados: {', '.join(allowed.keys())}",
+        )
+
+    contents = await file.read()
+    if len(contents) == 0:
+        raise HTTPException(status_code=400, detail="El archivo está vacío.")
+    if len(contents) > max_size:
+        raise HTTPException(status_code=413, detail=f"El archivo supera el límite permitido.")
+
+    ext      = allowed[mime]
+    filename = f"{file_type}_{uuid.uuid4().hex}{ext}"
+    (_ACTIVITY_FOLDER / filename).write_bytes(contents)
+
+    return {"url": f"/uploads/activities/{filename}", "filename": filename}
 
 
 # ── Actividades ───────────────────────────────────────────────
@@ -139,8 +196,8 @@ async def crear_actividad(
         text("""
             INSERT INTO activity (id_subject, id_type_activity, title, description,
                 difficulty_level, content, estimated_minutes, publication_status, thumbnail_url)
-            VALUES (:id_subject::uuid, :id_type_activity::uuid, :title, :description,
-                :difficulty_level, :content::jsonb, :estimated_minutes, :publication_status, :thumbnail_url)
+            VALUES (CAST(:id_subject AS uuid), CAST(:id_type_activity AS uuid), :title, :description,
+                :difficulty_level, CAST(:content AS jsonb), :estimated_minutes, :publication_status, :thumbnail_url)
             RETURNING id_activity, id_subject, id_type_activity, title, description,
                 difficulty_level, content, estimated_minutes, publication_status, thumbnail_url, created_at
         """),
@@ -181,17 +238,17 @@ async def listar_actividades(
 
     if degree_id:
         query += " JOIN subject s ON a.id_subject = s.id_subject"
-        conditions.append("s.id_degree = :degree_id::uuid")
+        conditions.append("s.id_degree = CAST(:degree_id AS uuid)")
         params["degree_id"] = degree_id
 
     if publication_status:
         conditions.append("a.publication_status = :pub_status")
         params["pub_status"] = publication_status
     if subject_id:
-        conditions.append("a.id_subject = :subject_id::uuid")
+        conditions.append("a.id_subject = CAST(:subject_id AS uuid)")
         params["subject_id"] = subject_id
     if type_activity_id:
-        conditions.append("a.id_type_activity = :type_activity_id::uuid")
+        conditions.append("a.id_type_activity = CAST(:type_activity_id AS uuid)")
         params["type_activity_id"] = type_activity_id
     if difficulty_level:
         conditions.append("a.difficulty_level = :difficulty_level")
@@ -216,7 +273,7 @@ async def obtener_actividad(
             SELECT id_activity, id_subject, id_type_activity, title, description,
                 difficulty_level, content, estimated_minutes, publication_status,
                 thumbnail_url, created_at
-            FROM activity WHERE id_activity = :id::uuid
+            FROM activity WHERE id_activity = CAST(:id AS uuid)
         """),
         {"id": activity_id},
     ).fetchone()
@@ -240,7 +297,7 @@ async def actualizar_actividad(
     for k, v in list(updates.items()):
         if k == "content" and v is not None:
             updates[k] = json.dumps(v)
-            set_parts.append(f"{k} = :{k}::jsonb")
+            set_parts.append(f"{k} = CAST(:{k} AS jsonb)")
         elif k in ("difficulty_level", "publication_status") and hasattr(v, "value"):
             updates[k] = v.value
             set_parts.append(f"{k} = :{k}")
@@ -249,7 +306,7 @@ async def actualizar_actividad(
 
     updates["id"] = activity_id
     result = db.execute(
-        text(f"UPDATE activity SET {', '.join(set_parts)}, updated_at = NOW() WHERE id_activity = :id::uuid"),
+        text(f"UPDATE activity SET {', '.join(set_parts)}, updated_at = NOW() WHERE id_activity = CAST(:id AS uuid)"),
         updates,
     )
     db.commit()
@@ -265,7 +322,7 @@ async def eliminar_actividad(
     cu:          TokenData = Depends(require_role(RolUsuario.admin)),
 ):
     result = db.execute(
-        text("UPDATE activity SET publication_status = 'archivado' WHERE id_activity = :id::uuid"),
+        text("UPDATE activity SET publication_status = 'archivado' WHERE id_activity = CAST(:id AS uuid)"),
         {"id": activity_id},
     )
     db.commit()

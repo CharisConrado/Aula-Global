@@ -2,53 +2,83 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import Image from "next/image";
+import { motion, AnimatePresence } from "framer-motion";
 import { useSessionStore } from "@/store/sessionStore";
-import { api, type ActivityResponse, type SubjectResponse } from "@/lib/api";
+import { useSensoryProfile } from "@/hooks/useSensoryProfile";
+import {
+  api,
+  type ActivityResponse,
+  type SubjectResponse,
+  type StudentResponse,
+} from "@/lib/api";
 import CalmingScreen from "@/components/ui/CalmingScreen";
-import { BookOpen, Star, LogOut, Play } from "lucide-react";
+import { BookOpen, Star, LogOut, Play, CheckCircle2, Circle, ChevronRight, Trophy, Target, Clock } from "lucide-react";
 
-/**
- * Interfaz principal del estudiante.
- *
- * Los estudiantes no tienen cuenta propia. Esta vista es navegada por el tutor
- * después de seleccionar un estudiante (setActiveStudentId) y puede ser
- * proyectada en el dispositivo del estudiante usando el token del tutor.
- *
- * Diseño para niños con TDAH/TEA (6-11 años):
- * - Colores suaves, tipografía grande
- * - Botones grandes con iconos y poca información simultánea
- * - Sin distracciones ni elementos superfluos
- */
+/* ══════════════════════════════════════════════════════════════
+   TIPOS
+══════════════════════════════════════════════════════════════ */
+interface SubjectProgress {
+  subject:    SubjectResponse;
+  activities: ActivityResponse[];
+  completed:  Set<string>;   // ids de actividades completadas en esta sesión
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PALETA
+══════════════════════════════════════════════════════════════ */
+const SUBJECT_PALETTE = [
+  { bg: "linear-gradient(145deg,#daedf7,#E1EFFF)", border: "rgba(127,179,213,0.45)", icon: "bg", accent: "#7FB3D5" },
+  { bg: "linear-gradient(145deg,#e2f6e1,#c5edc3)", border: "rgba(162,217,161,0.50)", icon: "bg", accent: "#A2D9A1" },
+  { bg: "linear-gradient(145deg,#ffe8d4,#ffd1a9)", border: "rgba(255,179,123,0.45)", icon: "bg", accent: "#FFB37B" },
+  { bg: "linear-gradient(145deg,#fef9db,#fef0b3)", border: "rgba(249,231,159,0.60)", icon: "bg", accent: "#e6c200" },
+  { bg: "linear-gradient(145deg,#ede9fe,#ddd6fe)", border: "rgba(167,139,250,0.40)", icon: "bg", accent: "#8b5cf6" },
+  { bg: "linear-gradient(145deg,#fce7f3,#fbcfe8)", border: "rgba(244,114,182,0.35)", icon: "bg", accent: "#ec4899" },
+];
+const SUBJECT_ICONS = ["📚", "🔢", "🌍", "🎨", "🔬", "🎵"];
+
+/* ══════════════════════════════════════════════════════════════
+   COMPONENTE PRINCIPAL
+══════════════════════════════════════════════════════════════ */
 export default function EstudiantePage() {
   const router = useRouter();
   const {
-    token,
-    user,
-    active_student_id,
-    activeSession,
-    setActiveSession,
-    logout,
+    token, user, active_student_id,
+    setActiveStudentId, activeSession, setActiveSession, logout,
   } = useSessionStore();
 
-  const [subjects, setSubjects] = useState<SubjectResponse[]>([]);
-  const [activities, setActivities] = useState<ActivityResponse[]>([]);
-  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [studentName, setStudentName] = useState("");
+  const [student,    setStudent]    = useState<StudentResponse | null>(null);
+  const [progresses, setProgresses] = useState<SubjectProgress[]>([]);
+  const [selected,   setSelected]   = useState<SubjectProgress | null>(null);
+  const [loading,    setLoading]    = useState(true);
 
+  // Aplica el perfil sensorial del estudiante al documento (contraste, fuente, animaciones)
+  useSensoryProfile(token, active_student_id);
+  // ids completadas en esta sesión (persiste mientras el estudiante navega)
+  const [completedSet, setCompletedSet] = useState<Set<string>>(new Set());
+
+  /* ── Carga inicial ── */
   const loadData = useCallback(async () => {
     if (!token || !active_student_id) return;
     try {
-      // Cargar datos del estudiante activo
-      const student = await api.getStudent(token, active_student_id);
-      setStudentName(student.full_name);
+      const stud = await api.getStudent(token, active_student_id);
+      setStudent(stud);
 
-      // Materias del grado del estudiante
-      const subs = await api.getSubjects({ degree_id: student.id_degree });
-      setSubjects(subs);
+      const subs = await api.getSubjects({ degree_id: stud.id_degree });
 
-      // Crear sesión si no hay una activa
+      // Para cada materia, cargamos sus actividades
+      const withActivities: SubjectProgress[] = await Promise.all(
+        subs.map(async (subject) => {
+          try {
+            const acts = await api.getActivities(token, { subject_id: subject.id_subject });
+            return { subject, activities: acts, completed: new Set<string>() };
+          } catch {
+            return { subject, activities: [], completed: new Set<string>() };
+          }
+        })
+      );
+      setProgresses(withActivities);
+
       if (!activeSession) {
         const session = await api.createSession(token, {
           id_student: active_student_id,
@@ -68,255 +98,573 @@ export default function EstudiantePage() {
   }, [token, active_student_id, activeSession, setActiveSession]);
 
   useEffect(() => {
-    // Requiere token de tutor/profesional y un estudiante activo seleccionado
-    if (!token || !user) {
-      router.replace("/login");
-      return;
+    if (!token || !user) { router.replace("/login"); return; }
+    if (user.rol === "estudiante" && !active_student_id) {
+      setActiveStudentId(user.user_id); return;
     }
     if (!active_student_id) {
-      // No se ha seleccionado un estudiante — volver al panel del tutor
-      router.replace(user.rol === "tutor" ? "/tutor" : "/admin");
-      return;
+      router.replace(user.rol === "tutor" ? "/tutor" : "/admin"); return;
     }
     loadData();
-  }, [token, user, active_student_id, router, loadData]);
+  }, [token, user, active_student_id, setActiveStudentId, router, loadData]);
 
-  const loadActivities = async (subjectId: string) => {
-    if (!token) return;
-    setSelectedSubject(subjectId);
-    try {
-      const acts = await api.getActivities(token, { subject_id: subjectId });
-      setActivities(acts);
-    } catch (err) {
-      console.error("Error cargando actividades:", err);
-    }
+  /* ── Marcar actividad completada (solo visual/local) ── */
+  const markDone = (actId: string) => {
+    setCompletedSet(prev => new Set([...prev, actId]));
   };
 
+  /* ── Cerrar sesión y volver ── */
   const handleExit = async () => {
     if (activeSession && token) {
-      try {
-        await api.closeSession(token, activeSession.id_session, {
-          status: "completada",
-        });
-      } catch {
-        // Continuar aunque falle el cierre
-      }
+      try { await api.closeSession(token, activeSession.id_session, { status: "completada" }); } catch {}
     }
     setActiveSession(null);
-    // Volver al panel del tutor sin hacer logout
-    router.replace(user?.rol === "tutor" ? "/tutor" : "/admin");
+    if (user?.rol === "estudiante") { logout(); router.replace("/login"); }
+    else router.replace(user?.rol === "tutor" ? "/tutor" : "/admin");
   };
 
-  const handleLogout = async () => {
-    if (activeSession && token) {
-      try {
-        await api.closeSession(token, activeSession.id_session, {
-          status: "completada",
-        });
-      } catch {
-        // Continuar con logout incluso si falla
-      }
-    }
-    setActiveSession(null);
-    logout();
-    router.replace("/login");
-  };
+  /* ── Estadísticas globales ── */
+  const totalActivities   = progresses.reduce((s, p) => s + p.activities.length, 0);
+  const totalCompleted    = completedSet.size;
+  const globalPct         = totalActivities > 0 ? Math.round((totalCompleted / totalActivities) * 100) : 0;
+  const studentName       = student?.full_name?.split(" ")[0] ?? "Estudiante";
 
-  const subjectColors = [
-    "from-blue-100 to-blue-200 border-blue-300",
-    "from-green-100 to-green-200 border-green-300",
-    "from-purple-100 to-purple-200 border-purple-300",
-    "from-orange-100 to-orange-200 border-orange-300",
-    "from-pink-100 to-pink-200 border-pink-300",
-    "from-teal-100 to-teal-200 border-teal-300",
-  ];
-
-  const subjectIcons = ["📚", "🔢", "🌍", "🎨", "🔬", "🎵"];
-
+  /* ── Loading ── */
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-soft-blue to-soft-green">
-        <motion.div
-          animate={{ scale: [1, 1.1, 1] }}
-          transition={{ duration: 2, repeat: Infinity }}
-          className="text-center"
-        >
-          <p className="text-kid-xl font-bold text-primary-600">Cargando...</p>
+      <div className="min-h-screen flex items-center justify-center student-shell" style={{ backgroundColor: "#FDF8F2" }}>
+        <motion.div className="text-center space-y-4">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+            className="w-14 h-14 rounded-full border-4 mx-auto"
+            style={{ borderColor: "#D5DBDB", borderTopColor: "#7FB3D5" }}
+          />
+          <p className="font-bold" style={{ color: "#7FB3D5" }}>Cargando…</p>
         </motion.div>
       </div>
     );
   }
 
+  /* ══════════════════════════════════════════════════════════
+     RENDER PRINCIPAL
+  ══════════════════════════════════════════════════════════ */
   return (
-    <div className="min-h-screen bg-gradient-to-br from-soft-blue via-white to-soft-green">
+    <div className="flex min-h-screen student-shell" style={{ backgroundColor: "#FDF8F2" }}>
       <CalmingScreen />
 
-      {/* Header simple */}
-      <header className="bg-white/80 backdrop-blur-sm border-b border-gray-100 px-6 py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Star className="w-8 h-8 text-warm-400" />
-            <div>
-              <h1 className="text-kid-lg font-bold text-gray-700">
-                ¡Hola, {studentName || "Estudiante"}!
-              </h1>
-              <p className="text-sm text-gray-400">¿Qué quieres aprender hoy?</p>
-            </div>
+      {/* ════════════ SIDEBAR IZQUIERDO ════════════ */}
+      <aside
+        className="fixed top-0 left-0 h-full flex flex-col z-20"
+        style={{
+          width: 230,
+          background: "white",
+          borderRight: "1.5px solid #D5DBDB",
+          boxShadow: "4px 0 20px rgba(127,179,213,0.10)",
+        }}
+      >
+        {/* Logo + brand */}
+        <div className="flex items-center gap-3 px-5 py-5" style={{ borderBottom: "1.5px solid #D5DBDB" }}>
+          <div
+            className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+            style={{ background: "linear-gradient(135deg,#FFB37B,#ff9450)" }}
+          >
+            <Star className="w-5 h-5 text-white" />
           </div>
-
-          <div className="flex items-center gap-2">
-            {/* Botón para que el tutor vuelva a su panel */}
-            <button
-              onClick={handleExit}
-              className="flex items-center gap-2 px-4 py-2 text-primary-500 hover:text-primary-600 transition-colors rounded-kid hover:bg-primary-50 text-sm font-semibold"
-            >
-              ← Volver
-            </button>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-gray-600 transition-colors rounded-kid hover:bg-gray-100"
-            >
-              <LogOut className="w-5 h-5" />
-              <span className="text-sm">Salir</span>
-            </button>
+          <div>
+            <p className="text-sm font-extrabold leading-tight" style={{ color: "#4587a9" }}>Aula Global</p>
+            <p className="text-xs" style={{ color: "#a0aec0" }}>Mi aprendizaje</p>
           </div>
         </div>
-      </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        {/* Materias */}
-        {!selectedSubject ? (
-          <section>
-            <h2 className="text-kid-xl font-bold text-gray-700 mb-6 text-center">
-              Elige una materia
-            </h2>
+        {/* Info del estudiante */}
+        <div className="px-5 py-4" style={{ borderBottom: "1.5px solid #D5DBDB" }}>
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-black text-white mx-auto mb-3"
+            style={{ background: "linear-gradient(135deg,#7FB3D5,#5a9ec2)" }}
+          >
+            {studentName.charAt(0).toUpperCase()}
+          </div>
+          <p className="text-sm font-extrabold text-center" style={{ color: "#34495E" }}>
+            ¡Hola, {studentName}!
+          </p>
+          <p className="text-xs text-center mt-0.5" style={{ color: "#a0aec0" }}>
+            {progresses.length} materias disponibles
+          </p>
+        </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {subjects.map((subject, index) => (
-                <motion.button
-                  key={subject.id_subject}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => loadActivities(subject.id_subject)}
-                  className={`p-8 rounded-kid-lg border-2 bg-gradient-to-br ${
-                    subjectColors[index % subjectColors.length]
-                  } text-left transition-shadow hover:shadow-lg`}
-                >
-                  <span className="text-4xl block mb-3">
-                    {subject.icon || subjectIcons[index % subjectIcons.length]}
-                  </span>
-                  <h3 className="text-kid-lg font-bold text-gray-700">
-                    {subject.subject_name}
-                  </h3>
-                  {subject.description && (
-                    <p className="text-sm text-gray-500 mt-1">
-                      {subject.description}
-                    </p>
-                  )}
-                </motion.button>
-              ))}
+        {/* Progreso global */}
+        <div className="px-5 py-4" style={{ borderBottom: "1.5px solid #D5DBDB" }}>
+          <p className="text-xs font-bold mb-2" style={{ color: "#34495E" }}>Mi progreso hoy</p>
 
-              {subjects.length === 0 && (
-                <div className="col-span-full text-center py-12">
-                  <BookOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-kid-base text-gray-400">
-                    No hay materias disponibles todavía
-                  </p>
-                </div>
-              )}
+          {/* Barra global */}
+          <div className="h-3 rounded-full overflow-hidden mb-1" style={{ background: "#f3f4f6" }}>
+            <motion.div
+              className="h-full rounded-full"
+              initial={{ width: 0 }}
+              animate={{ width: `${globalPct}%` }}
+              transition={{ duration: 0.8, ease: "easeOut" }}
+              style={{ background: "linear-gradient(90deg,#7FB3D5,#A2D9A1)" }}
+            />
+          </div>
+          <div className="flex justify-between text-xs" style={{ color: "#a0aec0" }}>
+            <span>{totalCompleted} completadas</span>
+            <span>{globalPct}%</span>
+          </div>
+
+          {/* Mini stats */}
+          <div className="grid grid-cols-2 gap-2 mt-3">
+            <div className="rounded-xl p-2 text-center" style={{ background: "#E1EFFF" }}>
+              <p className="text-base font-black" style={{ color: "#7FB3D5" }}>{totalCompleted}</p>
+              <p className="text-[10px] font-medium" style={{ color: "#7f8c8d" }}>Hechas</p>
             </div>
-          </section>
-        ) : (
-          /* Actividades de la materia seleccionada */
-          <section>
-            <button
-              onClick={() => {
-                setSelectedSubject(null);
-                setActivities([]);
-              }}
-              className="mb-6 flex items-center gap-2 text-primary-500 hover:text-primary-600 font-semibold transition-colors"
-            >
-              ← Volver a materias
-            </button>
+            <div className="rounded-xl p-2 text-center" style={{ background: "#f0fdf4" }}>
+              <p className="text-base font-black" style={{ color: "#A2D9A1" }}>{totalActivities - totalCompleted}</p>
+              <p className="text-[10px] font-medium" style={{ color: "#7f8c8d" }}>Pendientes</p>
+            </div>
+          </div>
+        </div>
 
-            <h2 className="text-kid-xl font-bold text-gray-700 mb-6">
-              Actividades
-            </h2>
+        {/* Lista de materias (navegación) */}
+        <nav className="flex-1 px-3 py-3 overflow-y-auto space-y-1">
+          <p className="text-[10px] font-bold uppercase tracking-wider px-2 mb-2" style={{ color: "#a0aec0" }}>
+            Materias
+          </p>
+          {progresses.map((prog, i) => {
+            const palette = SUBJECT_PALETTE[i % SUBJECT_PALETTE.length];
+            const done    = prog.activities.filter(a => completedSet.has(a.id_activity)).length;
+            const total   = prog.activities.length;
+            const pct     = total > 0 ? Math.round((done / total) * 100) : 0;
+            const active  = selected?.subject.id_subject === prog.subject.id_subject;
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              {activities.map((activity, index) => (
-                <motion.div
-                  key={activity.id_activity}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.08 }}
-                  className="card-kid hover:shadow-lg transition-shadow"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <h3 className="text-kid-base font-bold text-gray-700">
-                      {activity.title}
-                    </h3>
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-bold ${
-                        activity.difficulty_level === "facil"
-                          ? "bg-green-100 text-green-700"
-                          : activity.difficulty_level === "medio"
-                          ? "bg-yellow-100 text-yellow-700"
-                          : "bg-red-100 text-red-700"
-                      }`}
-                    >
-                      {activity.difficulty_level === "facil"
-                        ? "Fácil"
-                        : activity.difficulty_level === "medio"
-                        ? "Normal"
-                        : "Difícil"}
-                    </span>
+            return (
+              <button
+                key={prog.subject.id_subject}
+                onClick={() => setSelected(prog)}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-all"
+                style={active ? { background: "#E1EFFF" } : {}}
+                onMouseEnter={e => { if (!active) e.currentTarget.style.background = "#f8f9fa"; }}
+                onMouseLeave={e => { if (!active) e.currentTarget.style.background = "transparent"; }}
+              >
+                <span className="text-lg flex-shrink-0">
+                  {prog.subject.icon || SUBJECT_ICONS[i % SUBJECT_ICONS.length]}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold truncate" style={{ color: active ? "#4587a9" : "#34495E" }}>
+                    {prog.subject.subject_name}
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "#f3f4f6" }}>
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%`, background: palette.accent }}
+                      />
+                    </div>
+                    <span className="text-[10px]" style={{ color: "#a0aec0" }}>{done}/{total}</span>
                   </div>
+                </div>
+              </button>
+            );
+          })}
+        </nav>
 
-                  {activity.description && (
-                    <p className="text-sm text-gray-500 mb-4">
-                      {activity.description}
+        {/* Logout */}
+        <div className="px-4 py-4" style={{ borderTop: "1.5px solid #D5DBDB" }}>
+          <button
+            onClick={handleExit}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors"
+            style={{ color: "#a0aec0" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "#f5f5f5"; e.currentTarget.style.color = "#ef4444"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#a0aec0"; }}
+          >
+            <LogOut className="w-4 h-4" />
+            Salir
+          </button>
+        </div>
+      </aside>
+
+      {/* ════════════ CONTENIDO PRINCIPAL ════════════ */}
+      <div className="flex-1 flex flex-col" style={{ marginLeft: 230 }}>
+
+        {/* Top bar */}
+        <header
+          className="sticky top-0 z-10 px-8 py-4 flex items-center justify-between"
+          style={{
+            background: "rgba(253,248,242,0.92)",
+            backdropFilter: "blur(8px)",
+            borderBottom: "1.5px solid #D5DBDB",
+          }}
+        >
+          <div>
+            <h1 className="text-lg font-extrabold" style={{ color: "#34495E" }}>
+              {selected ? selected.subject.subject_name : "¿Qué quieres aprender hoy? ✨"}
+            </h1>
+            <p className="text-xs mt-0.5" style={{ color: "#a0aec0" }}>
+              {selected
+                ? `${selected.activities.filter(a => completedSet.has(a.id_activity)).length} de ${selected.activities.length} actividades completadas`
+                : `${progresses.length} materias · ${totalActivities} actividades en total`
+              }
+            </p>
+          </div>
+
+          {selected && (
+            <button
+              onClick={() => setSelected(null)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+              style={{ color: "#5a9ec2" }}
+              onMouseEnter={e => e.currentTarget.style.background = "#E1EFFF"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+            >
+              ← Todas las materias
+            </button>
+          )}
+        </header>
+
+        {/* Main */}
+        <main className="flex-1 px-8 py-8">
+          <AnimatePresence mode="wait">
+
+            {/* ══ VISTA: Todas las materias ══ */}
+            {!selected && (
+              <motion.div
+                key="materias"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25 }}
+              >
+                {/* Trofeo si completó algo */}
+                {totalCompleted > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="flex items-center gap-3 px-5 py-3 rounded-2xl mb-6"
+                    style={{
+                      background: "linear-gradient(135deg,#fef9db,#fef0b3)",
+                      border: "1.5px solid rgba(249,231,159,0.6)",
+                    }}
+                  >
+                    <Trophy className="w-6 h-6 flex-shrink-0" style={{ color: "#e6c200" }} />
+                    <p className="text-sm font-bold" style={{ color: "#34495E" }}>
+                      ¡Llevas {totalCompleted} actividad{totalCompleted !== 1 ? "es" : ""} completada{totalCompleted !== 1 ? "s" : ""} hoy! Sigue así 🚀
                     </p>
-                  )}
+                  </motion.div>
+                )}
 
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 text-sm text-gray-400">
-                      {activity.estimated_minutes && (
-                        <span>⏱ {activity.estimated_minutes} min</span>
-                      )}
+                {/* Grid de materias */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+                  {progresses.map((prog, index) => {
+                    const palette = SUBJECT_PALETTE[index % SUBJECT_PALETTE.length];
+                    const done    = prog.activities.filter(a => completedSet.has(a.id_activity)).length;
+                    const total   = prog.activities.length;
+                    const pct     = total > 0 ? Math.round((done / total) * 100) : 0;
+
+                    return (
+                      <motion.button
+                        key={prog.subject.id_subject}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.07 }}
+                        whileHover={{ scale: 1.03, y: -4 }}
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => setSelected(prog)}
+                        className="rounded-[1.5rem] p-6 text-left"
+                        style={{
+                          background: palette.bg,
+                          border: `2px solid ${palette.border}`,
+                          boxShadow: "0 2px 12px rgba(52,73,94,0.07)",
+                        }}
+                      >
+                        {/* Emoji + nombre */}
+                        <div className="flex items-start justify-between mb-4">
+                          <span className="text-4xl">
+                            {prog.subject.icon || SUBJECT_ICONS[index % SUBJECT_ICONS.length]}
+                          </span>
+                          {done === total && total > 0 && (
+                            <span className="text-xl">🏆</span>
+                          )}
+                        </div>
+                        <h3 className="text-base font-extrabold mb-1" style={{ color: "#34495E" }}>
+                          {prog.subject.subject_name}
+                        </h3>
+                        {prog.subject.description && (
+                          <p className="text-xs mb-3" style={{ color: "#7f8c8d" }}>{prog.subject.description}</p>
+                        )}
+
+                        {/* Barra de progreso */}
+                        <div className="mt-3">
+                          <div className="flex justify-between text-xs mb-1" style={{ color: "#7f8c8d" }}>
+                            <span>{done} de {total} actividades</span>
+                            <span className="font-bold" style={{ color: palette.accent }}>{pct}%</span>
+                          </div>
+                          <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.6)" }}>
+                            <motion.div
+                              className="h-full rounded-full"
+                              initial={{ width: 0 }}
+                              animate={{ width: `${pct}%` }}
+                              transition={{ duration: 0.8, delay: index * 0.07 }}
+                              style={{ background: palette.accent }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex items-center gap-1" style={{ color: palette.accent }}>
+                          <span className="text-xs font-bold">
+                            {pct === 100 ? "¡Completado! 🎉" : pct > 0 ? "Continuar →" : "Empezar →"}
+                          </span>
+                        </div>
+                      </motion.button>
+                    );
+                  })}
+
+                  {progresses.length === 0 && (
+                    <div className="col-span-full text-center py-20">
+                      <BookOpen className="w-16 h-16 mx-auto mb-4" style={{ color: "#D5DBDB" }} />
+                      <p className="font-bold" style={{ color: "#a0aec0" }}>No hay materias disponibles todavía</p>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ══ VISTA: Actividades de una materia (journey) ══ */}
+            {selected && (
+              <motion.div
+                key={selected.subject.id_subject}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25 }}
+              >
+                {/* Resumen de progreso de la materia */}
+                {(() => {
+                  const idx     = progresses.findIndex(p => p.subject.id_subject === selected.subject.id_subject);
+                  const palette = SUBJECT_PALETTE[idx % SUBJECT_PALETTE.length];
+                  const done    = selected.activities.filter(a => completedSet.has(a.id_activity)).length;
+                  const total   = selected.activities.length;
+                  const pct     = total > 0 ? Math.round((done / total) * 100) : 0;
+
+                  return (
+                    <div
+                      className="rounded-2xl p-5 mb-8 flex items-center gap-5"
+                      style={{ background: palette.bg, border: `2px solid ${palette.border}` }}
+                    >
+                      <span className="text-5xl flex-shrink-0">
+                        {selected.subject.icon || SUBJECT_ICONS[idx % SUBJECT_ICONS.length]}
+                      </span>
+                      <div className="flex-1">
+                        <h2 className="text-lg font-extrabold mb-1" style={{ color: "#34495E" }}>
+                          {selected.subject.subject_name}
+                        </h2>
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.5)" }}>
+                            <motion.div
+                              className="h-full rounded-full"
+                              initial={{ width: 0 }}
+                              animate={{ width: `${pct}%` }}
+                              transition={{ duration: 0.6 }}
+                              style={{ background: palette.accent }}
+                            />
+                          </div>
+                          <span className="text-sm font-extrabold flex-shrink-0" style={{ color: palette.accent }}>
+                            {done}/{total}
+                          </span>
+                        </div>
+                      </div>
+                      {/* Stats rápidos */}
+                      <div className="flex gap-3 flex-shrink-0">
+                        <div className="text-center">
+                          <p className="text-xl font-black" style={{ color: "#A2D9A1" }}>{done}</p>
+                          <p className="text-[10px]" style={{ color: "#7f8c8d" }}>Hechas</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xl font-black" style={{ color: "#7f8c8d" }}>{total - done}</p>
+                          <p className="text-[10px]" style={{ color: "#7f8c8d" }}>Pendientes</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Journey de actividades */}
+                {selected.activities.length === 0 ? (
+                  <div className="text-center py-16">
+                    <p className="text-base font-bold" style={{ color: "#a0aec0" }}>
+                      No hay actividades en esta materia todavía
+                    </p>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    {/* Línea vertical del journey */}
+                    <div
+                      className="absolute left-6 top-4 bottom-4 w-0.5"
+                      style={{ background: "#D5DBDB" }}
+                    />
+
+                    <div className="space-y-4">
+                      {selected.activities.map((activity, index) => {
+                        const isDone    = completedSet.has(activity.id_activity);
+                        // Se puede hacer si es la primera o si la anterior está completa
+                        const canDo     = index === 0
+                          || completedSet.has(selected.activities[index - 1]?.id_activity);
+
+                        const diffStyle =
+                          activity.difficulty_level === "facil"
+                            ? { bg: "#dcfce7", text: "#16a34a", label: "⭐ Fácil" }
+                            : activity.difficulty_level === "medio"
+                            ? { bg: "#ffedd5", text: "#ea580c", label: "⚡ Normal" }
+                            : { bg: "#fce7f3", text: "#be185d", label: "🔥 Difícil" };
+
+                        return (
+                          <motion.div
+                            key={activity.id_activity}
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: index * 0.06 }}
+                            className="flex items-start gap-4"
+                          >
+                            {/* Nodo del journey */}
+                            <div className="flex-shrink-0 z-10 mt-4">
+                              {isDone ? (
+                                <div
+                                  className="w-12 h-12 rounded-full flex items-center justify-center"
+                                  style={{ background: "linear-gradient(135deg,#A2D9A1,#7dc97c)", boxShadow: "0 2px 10px rgba(162,217,161,0.5)" }}
+                                >
+                                  <CheckCircle2 className="w-6 h-6 text-white" />
+                                </div>
+                              ) : canDo ? (
+                                <motion.div
+                                  animate={{ scale: [1, 1.08, 1] }}
+                                  transition={{ duration: 2, repeat: Infinity }}
+                                  className="w-12 h-12 rounded-full flex items-center justify-center"
+                                  style={{ background: "linear-gradient(135deg,#FFB37B,#ff9450)", boxShadow: "0 2px 12px rgba(255,148,80,0.45)" }}
+                                >
+                                  <span className="text-white font-black text-sm">{index + 1}</span>
+                                </motion.div>
+                              ) : (
+                                <div
+                                  className="w-12 h-12 rounded-full flex items-center justify-center"
+                                  style={{ background: "#f3f4f6", border: "2px solid #D5DBDB" }}
+                                >
+                                  <Circle className="w-5 h-5" style={{ color: "#D5DBDB" }} />
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Tarjeta de actividad */}
+                            <div
+                              className="flex-1 rounded-2xl p-5 transition-all"
+                              style={{
+                                background: isDone ? "#f0fdf4" : canDo ? "white" : "#fafafa",
+                                border: isDone
+                                  ? "1.5px solid rgba(162,217,161,0.5)"
+                                  : canDo
+                                  ? "1.5px solid #D5DBDB"
+                                  : "1.5px solid #e5e7eb",
+                                boxShadow: canDo && !isDone ? "0 2px 12px rgba(127,179,213,0.10)" : "none",
+                                opacity: !canDo && !isDone ? 0.55 : 1,
+                              }}
+                            >
+                              <div className="flex items-start justify-between gap-3 mb-2">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                                    <h3 className="text-sm font-extrabold" style={{ color: isDone ? "#16a34a" : "#34495E" }}>
+                                      {activity.title}
+                                    </h3>
+                                    {isDone && (
+                                      <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                                        style={{ background: "#dcfce7", color: "#16a34a" }}>
+                                        ✓ Completada
+                                      </span>
+                                    )}
+                                  </div>
+                                  {activity.description && (
+                                    <p className="text-xs" style={{ color: "#7f8c8d" }}>{activity.description}</p>
+                                  )}
+                                </div>
+                                <span
+                                  className="flex-shrink-0 text-xs font-bold px-2.5 py-1 rounded-full"
+                                  style={{ background: diffStyle.bg, color: diffStyle.text }}
+                                >
+                                  {diffStyle.label}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center justify-between mt-3">
+                                {activity.estimated_minutes ? (
+                                  <span className="flex items-center gap-1 text-xs" style={{ color: "#a0aec0" }}>
+                                    <Clock className="w-3 h-3" />
+                                    {activity.estimated_minutes} min
+                                  </span>
+                                ) : <span />}
+
+                                {isDone ? (
+                                  <div className="flex items-center gap-1.5 text-xs font-bold" style={{ color: "#A2D9A1" }}>
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    ¡Muy bien!
+                                  </div>
+                                ) : canDo ? (
+                                  <motion.button
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.95 }}
+                                    onClick={() => {
+                                      router.push(`/estudiante/actividad/${activity.id_activity}`);
+                                    }}
+                                    className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold text-white"
+                                    style={{
+                                      background: "linear-gradient(135deg,#FFB37B,#ff9450)",
+                                      boxShadow: "0 3px 12px rgba(255,148,80,0.40)",
+                                    }}
+                                  >
+                                    <Play className="w-3 h-3" />
+                                    Empezar
+                                  </motion.button>
+                                ) : (
+                                  <span className="text-xs font-medium" style={{ color: "#D5DBDB" }}>
+                                    🔒 Completa la anterior primero
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
                     </div>
 
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() =>
-                        router.push(
-                          `/estudiante/actividad/${activity.id_activity}`
-                        )
-                      }
-                      className="flex items-center gap-2 px-5 py-3 bg-primary-400 text-white font-bold rounded-kid hover:bg-primary-500 transition-colors"
-                    >
-                      <Play className="w-5 h-5" />
-                      Empezar
-                    </motion.button>
+                    {/* Fin del journey */}
+                    {selected.activities.length > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: selected.activities.length * 0.06 + 0.2 }}
+                        className="flex items-center gap-4 mt-4"
+                      >
+                        <div
+                          className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 z-10 text-xl"
+                          style={{
+                            background: selected.activities.every(a => completedSet.has(a.id_activity))
+                              ? "linear-gradient(135deg,#F9E79F,#f59e0b)"
+                              : "#f3f4f6",
+                            border: "2px solid #D5DBDB",
+                          }}
+                        >
+                          🏆
+                        </div>
+                        <p className="text-sm font-bold" style={{ color: "#a0aec0" }}>
+                          {selected.activities.every(a => completedSet.has(a.id_activity))
+                            ? "¡Completaste toda la materia! Eres increíble 🎉"
+                            : "Meta: completar todas las actividades"}
+                        </p>
+                      </motion.div>
+                    )}
                   </div>
-                </motion.div>
-              ))}
+                )}
+              </motion.div>
+            )}
 
-              {activities.length === 0 && (
-                <div className="col-span-full text-center py-12">
-                  <p className="text-kid-base text-gray-400">
-                    No hay actividades en esta materia todavía
-                  </p>
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-      </main>
+          </AnimatePresence>
+        </main>
+      </div>
     </div>
   );
 }

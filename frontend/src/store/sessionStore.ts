@@ -10,9 +10,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export interface User {
-  user_id: string;   // UUID del tutor / profesional / admin
-  email: string;
-  rol: "tutor" | "profesional" | "admin";
+  user_id: string;   // UUID del tutor / profesional / admin / estudiante
+  email: string;     // para estudiantes contiene el full_name
+  rol: "estudiante" | "tutor" | "profesional" | "admin";
 }
 
 export interface ActiveSession {
@@ -37,6 +37,10 @@ export interface CrisisAlert {
 }
 
 interface SessionStore {
+  // ── Hidratación ────────────────────────────────────────────
+  _hasHydrated: boolean;
+  setHasHydrated: (v: boolean) => void;
+
   // ── Autenticación ──────────────────────────────────────────
   token: string | null;
   user: User | null;
@@ -74,6 +78,10 @@ interface SessionStore {
 export const useSessionStore = create<SessionStore>()(
   persist(
     (set) => ({
+      // --- Hidratación ---
+      _hasHydrated: false,
+      setHasHydrated: (v) => set({ _hasHydrated: v }),
+
       // --- Autenticación ---
       token: null,
       user: null,
@@ -132,12 +140,15 @@ export const useSessionStore = create<SessionStore>()(
     }),
     {
       name: "aula-global-session",
-      // Solo se persiste en localStorage lo necesario para restaurar la sesión
       partialize: (state) => ({
         token: state.token,
         user: state.user,
         active_student_id: state.active_student_id,
+        activeSession: state.activeSession,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
   )
 );

@@ -10,11 +10,12 @@ const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
 
 /** Datos que el cliente envía al WebSocket del estudiante */
 export interface MonitoringData {
-  id_session: string;       // UUID de la sesión activa
-  emotion: string;          // 'neutro' | 'feliz' | 'frustrado' | 'ansioso' | 'distraido' | 'estresado' | 'calmado'
-  attention_level: number;  // 0.0 – 1.0
+  id_session: string;
+  emotion: string;
+  attention_level: number;
   stimming: boolean;
   tactile_pressure: boolean;
+  video_frame?: string;   // JPEG base64 sin prefijo data:
 }
 
 export interface AdaptationAction {
@@ -100,6 +101,13 @@ export class MonitoringWebSocket {
   send(data: MonitoringData): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data));
+    }
+  }
+
+  /** Envía solo un frame de video (alta frecuencia para efecto videollamada). */
+  sendFrame(frame: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: "frame", video_frame: frame }));
     }
   }
 
@@ -194,11 +202,14 @@ export class TutorMonitoringWebSocket {
 
 /** Mensaje que envía el backend al WebSocket del tutor (notificación de estado) */
 export interface TutorMonitoringUpdate {
-  type: string;                     // 'monitoring_update'
-  student_id: string;               // UUID
-  emocion: string;
-  nivel_atencion: number;
-  stimming: boolean;
-  acciones: AdaptationAction[];
-  alerta_crisis: string | null;     // 'leve' | 'moderada' | 'grave' | null
+  type: "monitoring_update" | "frame_update" | string;
+  student_id: string;
+  // Campos opcionales — solo presentes en monitoring_update
+  emocion?: string;
+  nivel_atencion?: number;
+  stimming?: boolean;
+  acciones?: AdaptationAction[];
+  alerta_crisis?: string | null;
+  // Presente en frame_update y opcionalmente en monitoring_update
+  video_frame?: string | null;
 }

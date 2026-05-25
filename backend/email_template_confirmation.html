@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Confirma tu cuenta — Aula Global</title>
+</head>
+<body style="margin:0;padding:0;background-color:#FDF8F2;font-family:'Segoe UI',Arial,sans-serif;">
+
+  <table width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background-color:#FDF8F2;padding:40px 20px;">
+    <tr>
+      <td align="center">
+
+        <table width="100%" cellpadding="0" cellspacing="0" border="0"
+               style="max-width:580px;background:#ffffff;border-radius:24px;
+                      overflow:hidden;
+                      box-shadow:0 4px 32px rgba(127,179,213,0.18),0 1px 8px rgba(52,73,94,0.08);">
+
+          <!-- ══ HEADER ══ -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#7FB3D5 0%,#A2D9A1 100%);
+                       padding:36px 40px 28px;text-align:center;">
+
+              <!-- Logo: persona con hoja -->
+              <div style="margin-bottom:14px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="76"
+                     viewBox="0 0 120 140" fill="none"
+                     style="display:inline-block;vertical-align:middle;">
+                  <!-- Hoja -->
+                  <path d="M72 18 C86 12 100 23 96 42 C92 58 75 57 68 49 C61 42 57 26 72 18Z"
+                        fill="rgba(255,255,255,0.95)"/>
+                  <path d="M72 18 C73 31 72 43 68 49"
+                        stroke="rgba(127,179,213,0.5)" stroke-width="2"
+                        stroke-linecap="round" fill="none"/>
+                  <path d="M74 27 L83 36 M74 34 L84 43 M73 40 L79 47"
+                        stroke="rgba(127,179,213,0.40)" stroke-width="1.2"
+                        stroke-linecap="round"/>
+                  <!-- Brazo derecho hacia la hoja -->
+                  <path d="M57 82 Q64 62 70 49"
+                        stroke="white" stroke-width="8"
+                        stroke-linecap="round" fill="none"/>
+                  <!-- Brazo izquierdo -->
+                  <path d="M44 82 Q30 73 22 63"
+                        stroke="white" stroke-width="8"
+                        stroke-linecap="round" fill="none"/>
+                  <!-- Cabeza -->
+                  <circle cx="50" cy="70" r="11" fill="white"/>
+                  <!-- Cuerpo -->
+                  <path d="M39 82 C36 93 38 107 42 114 C46 120 54 120 58 114 C62 107 64 93 61 82 C57 77 43 77 39 82Z"
+                        fill="white"/>
+                  <!-- Piernas -->
+                  <line x1="44" y1="114" x2="40" y2="130"
+                        stroke="white" stroke-width="7" stroke-linecap="round"/>
+                  <line x1="56" y1="114" x2="60" y2="130"
+                        stroke="white" stroke-width="7" stroke-linecap="round"/>
+                </svg>
+              </div>
+
+              <h1 style="margin:0 0 4px;font-size:30px;font-weight:800;
+                         color:#ffffff;letter-spacing:-0.5px;">
+                Aula Global
+              </h1>
+              <p style="margin:0 0 2px;font-size:13px;color:rgba(255,255,255,0.90);
+                        font-weight:600;letter-spacing:0.4px;">
+                Plataforma Educativa Adaptativa
+              </p>
+              <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.72);
+                        font-weight:400;">
+                Diseñada para niños con neuro diversidad
+              </p>
+            </td>
+          </tr>
+
+          <!-- ══ CUERPO ══ -->
+          <tr>
+            <td style="padding:36px 40px 28px;">
+
+              <!-- Saludo -->
+              <p style="margin:0 0 6px;font-size:22px;font-weight:800;color:#34495E;">
+                ¡Bienvenido a Aula Global! 👋
+              </p>
+              <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#5d6d7e;">
+                Gracias por registrarte en <strong style="color:#34495E;">Aula Global</strong>,
+                la plataforma que acompaña el aprendizaje de niños con TDAH y TEA
+                a través de actividades adaptativas e inteligencia artificial.
+              </p>
+              <p style="margin:0 0 28px;font-size:15px;line-height:1.7;color:#5d6d7e;">
+                Para activar tu cuenta y comenzar a acompañar a tus estudiantes,
+                confirma tu dirección de correo electrónico:
+              </p>
+
+              <!-- Botón CTA -->
+              <div style="text-align:center;margin:28px 0 32px;">
+                <a href="{{ .ConfirmationURL }}"
+                   style="display:inline-block;
+                          background:linear-gradient(135deg,#FFB37B,#ff9450);
+                          color:#ffffff;
+                          padding:16px 48px;
+                          border-radius:50px;
+                          font-size:16px;
+                          font-weight:700;
+                          text-decoration:none;
+                          letter-spacing:0.2px;
+                          box-shadow:0 4px 20px rgba(255,148,80,0.45);">
+                  ✓ &nbsp; Confirmar mi correo
+                </a>
+              </div>
+
+              <!-- Qué puedes hacer -->
+              <div style="background:#E1EFFF;border-radius:16px;
+                          padding:18px 22px;margin-bottom:24px;">
+                <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:#34495E;">
+                  🌟 ¿Qué puedes hacer en Aula Global?
+                </p>
+                <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                  <tr>
+                    <td style="padding:4px 0;font-size:13px;color:#4587a9;">
+                      📚 &nbsp;Registrar y monitorear a tus estudiantes en tiempo real
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:4px 0;font-size:13px;color:#4587a9;">
+                      🧠 &nbsp;Acceder a actividades adaptadas al perfil sensorial de cada niño
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:4px 0;font-size:13px;color:#4587a9;">
+                      🚨 &nbsp;Recibir alertas automáticas ante situaciones de crisis
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:4px 0;font-size:13px;color:#4587a9;">
+                      📊 &nbsp;Ver el historial de sesiones y progreso académico
+                    </td>
+                  </tr>
+                </table>
+              </div>
+
+              <!-- Separador -->
+              <hr style="border:none;border-top:1px solid #D5DBDB;margin:0 0 20px;" />
+
+              <!-- Nota de seguridad -->
+              <p style="margin:0;font-size:12px;color:#95a5a6;line-height:1.6;">
+                Si no creaste una cuenta en Aula Global, puedes ignorar este mensaje.
+                El enlace de confirmación expira en <strong>24 horas</strong>.
+              </p>
+            </td>
+          </tr>
+
+          <!-- ══ FOOTER ══ -->
+          <tr>
+            <td style="background:#FDF8F2;padding:22px 40px;
+                       border-top:1px solid #D5DBDB;text-align:center;">
+
+              <!-- Puntos decorativos con colores de la marca -->
+              <div style="margin-bottom:10px;">
+                <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+                             background:#7FB3D5;margin:0 4px;"></span>
+                <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+                             background:#A2D9A1;margin:0 4px;"></span>
+                <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+                             background:#FFB37B;margin:0 4px;"></span>
+                <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+                             background:#F9E79F;margin:0 4px;"></span>
+              </div>
+
+              <p style="margin:0 0 3px;font-size:12px;font-weight:700;color:#7f8c8d;">
+                © 2025 Aula Global
+              </p>
+              <p style="margin:0 0 3px;font-size:11px;color:#a0aec0;">
+                Plataforma para educación inclusiva
+              </p>
+              <p style="margin:0;font-size:11px;color:#a0aec0;">
+                Acompañando a familias y profesionales en el desarrollo de niños con neuro diversidad
+              </p>
+            </td>
+          </tr>
+
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>
+
+<!--
+  ════════════════════════════════════════════════════════════════
+  INSTRUCCIONES — Cómo aplicar esta plantilla en Supabase
+  ════════════════════════════════════════════════════════════════
+
+  1. Ve a: https://supabase.com/dashboard → tu proyecto
+  2. Navega a: Authentication → Email Templates
+  3. Selecciona: "Confirm signup"
+  4. SUBJECT (asunto): Confirma tu cuenta en Aula Global
+  5. Reemplaza TODO el HTML con el contenido de este archivo
+     (sin incluir estos comentarios)
+  6. Clic en "Save"
+
+  NOTA: {{ .ConfirmationURL }} es el placeholder de Supabase,
+  NO lo cambies — Supabase lo reemplaza con el enlace real.
+  ════════════════════════════════════════════════════════════════
+-->

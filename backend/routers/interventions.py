@@ -45,10 +45,10 @@ async def crear_intervencion(
         text("""
             INSERT INTO intervention (id_session, id_tutor, id_professional, id_crisis,
                 help_type, session_moment, description, status)
-            VALUES (:id_session::uuid,
-                    :id_tutor::uuid,
-                    :id_professional::uuid,
-                    :id_crisis::uuid,
+            VALUES (CAST(:id_session AS uuid),
+                    CAST(:id_tutor AS uuid),
+                    CAST(:id_professional AS uuid),
+                    CAST(:id_crisis AS uuid),
                     :help_type, :session_moment, :description, 'pendiente')
             RETURNING id_intervention, id_session, id_crisis, id_tutor, id_professional,
                 help_type, session_moment, description, status, resolved_at, created_at
@@ -84,7 +84,7 @@ async def listar_intervenciones(
     params: dict = {}
 
     if session_id:
-        query += " AND id_session = :session_id::uuid"
+        query += " AND id_session = CAST(:session_id AS uuid)"
         params["session_id"] = session_id
     if help_type:
         query += " AND help_type = :help_type"
@@ -96,7 +96,7 @@ async def listar_intervenciones(
 
     # Tutores solo ven sus propias intervenciones o las de su sesión
     if cu.rol == RolUsuario.tutor:
-        query += " AND id_tutor = :tutor_id::uuid"
+        query += " AND id_tutor = CAST(:tutor_id AS uuid)"
         params["tutor_id"] = cu.user_id
 
     query += " ORDER BY created_at DESC LIMIT :limit"
@@ -139,7 +139,7 @@ async def obtener_intervencion(
         text("""
             SELECT id_intervention, id_session, id_crisis, id_tutor, id_professional,
                    help_type, session_moment, description, status, resolved_at, created_at
-            FROM intervention WHERE id_intervention = :id::uuid
+            FROM intervention WHERE id_intervention = CAST(:id AS uuid)
         """),
         {"id": intervention_id},
     ).fetchone()
@@ -171,7 +171,7 @@ async def actualizar_intervencion(
 
     updates["id"] = intervention_id
     result = db.execute(
-        text(f"UPDATE intervention SET {', '.join(set_parts)} WHERE id_intervention = :id::uuid"),
+        text(f"UPDATE intervention SET {', '.join(set_parts)} WHERE id_intervention = CAST(:id AS uuid)"),
         updates,
     )
     db.commit()
@@ -199,7 +199,7 @@ async def solicitar_consulta_externa(
     row = db.execute(
         text("""
             INSERT INTO intervention (id_session, id_tutor, id_professional, help_type, description, status)
-            VALUES (:id_session::uuid, :id_tutor::uuid, :id_professional::uuid,
+            VALUES (CAST(:id_session AS uuid), CAST(:id_tutor AS uuid), CAST(:id_professional AS uuid),
                     'consulta_externa', :description, 'pendiente')
             RETURNING id_intervention, id_session, id_crisis, id_tutor, id_professional,
                 help_type, session_moment, description, status, resolved_at, created_at

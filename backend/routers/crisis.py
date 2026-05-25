@@ -38,8 +38,8 @@ async def registrar_crisis(
     row = db.execute(
         text("""
             INSERT INTO crisis (id_session, id_type_crisis, id_action, id_student, required_human, notes)
-            VALUES (:id_session::uuid, :id_type_crisis::uuid, :id_action::uuid,
-                    :id_student::uuid, :required_human, :notes)
+            VALUES (CAST(:id_session AS uuid), CAST(:id_type_crisis AS uuid), CAST(:id_action AS uuid),
+                    CAST(:id_student AS uuid), :required_human, :notes)
             RETURNING id_crisis, id_session, id_type_crisis, id_action, id_student,
                 detection_timestamp, resolved_at, was_effective, required_human, notes, created_at
         """),
@@ -73,10 +73,10 @@ async def listar_crisis(
     params: dict = {}
 
     if student_id:
-        query += " AND id_student = :student_id::uuid"
+        query += " AND id_student = CAST(:student_id AS uuid)"
         params["student_id"] = student_id
     if session_id:
-        query += " AND id_session = :session_id::uuid"
+        query += " AND id_session = CAST(:session_id AS uuid)"
         params["session_id"] = session_id
     if resuelta is True:
         query += " AND resolved_at IS NOT NULL"
@@ -88,7 +88,7 @@ async def listar_crisis(
         query += """
             AND id_student IN (
                 SELECT id_student FROM responsible_principal
-                WHERE id_tutor = :tutor_id::uuid AND is_active = true
+                WHERE id_tutor = CAST(:tutor_id AS uuid) AND is_active = true
             )
         """
         params["tutor_id"] = cu.user_id
@@ -119,7 +119,7 @@ async def crisis_activas(
         query += """
             AND c.id_student IN (
                 SELECT id_student FROM responsible_principal
-                WHERE id_tutor = :tutor_id::uuid AND is_active = true
+                WHERE id_tutor = CAST(:tutor_id AS uuid) AND is_active = true
             )
         """
         params["tutor_id"] = cu.user_id
@@ -139,7 +139,7 @@ async def obtener_crisis(
         text("""
             SELECT id_crisis, id_session, id_type_crisis, id_action, id_student,
                    detection_timestamp, resolved_at, was_effective, required_human, notes, created_at
-            FROM crisis WHERE id_crisis = :id::uuid
+            FROM crisis WHERE id_crisis = CAST(:id AS uuid)
         """),
         {"id": crisis_id},
     ).fetchone()
@@ -162,7 +162,7 @@ async def resolver_crisis(
             SET resolved_at   = NOW(),
                 was_effective = :was_effective,
                 notes         = COALESCE(:notes, notes)
-            WHERE id_crisis = :id::uuid AND resolved_at IS NULL
+            WHERE id_crisis = CAST(:id AS uuid) AND resolved_at IS NULL
         """),
         {
             "id":           crisis_id,

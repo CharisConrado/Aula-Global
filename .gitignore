@@ -1,5 +1,19 @@
-.env
-.env.local
-venv/
-node_modules/
-__pycache__/
+# Python
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/.env
+
+# Uploads locales
+backend/uploads/
+
+# Next.js
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+frontend/.env.production
+
+# Misc
+.DS_Store
+*.log

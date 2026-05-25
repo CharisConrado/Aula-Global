@@ -14,6 +14,7 @@ from enum import Enum
 # ============================================================
 
 class RolUsuario(str, Enum):
+    estudiante   = "estudiante"
     tutor        = "tutor"
     profesional  = "profesional"
     admin        = "admin"
@@ -207,30 +208,53 @@ class ProfessionalResponse(BaseModel):
 # STUDENT
 # ============================================================
 
+class ProfileCreatePayload(BaseModel):
+    """Subset de ProfileCreate sin id_student (se infiere del estudiante creado)."""
+    volume_level:    int  = Field(default=5, ge=0, le=10)
+    visual_contrast: str  = "normal"
+    feedback_type:   str  = "visual"
+    font_size:       str  = "normal"
+    animation_speed: str  = "normal"
+    max_session_min: int  = 30
+    needs_breaks:    bool = True
+    break_interval:  int  = 10
+
+
 class StudentCreate(BaseModel):
-    full_name:  str = Field(..., min_length=2, max_length=200)
-    birth_date: date
-    id_degree:  str   # UUID
+    full_name:         str = Field(..., min_length=2, max_length=200)
+    birth_date:        date
+    id_degree:         str   # UUID
+    identity_document: str = Field(..., min_length=3, max_length=50)
+    # Perfil sensorial opcional — si se entrega, se crea en la misma transacción
+    profile:           Optional[ProfileCreatePayload] = None
 
 
 class StudentUpdate(BaseModel):
-    full_name:      Optional[str] = None
-    birth_date:     Optional[date] = None
-    id_degree:      Optional[str] = None
-    account_status: Optional[AccountStatus] = None
+    full_name:         Optional[str] = None
+    birth_date:        Optional[date] = None
+    id_degree:         Optional[str] = None
+    account_status:    Optional[AccountStatus] = None
+    identity_document: Optional[str] = None
 
 
 class StudentResponse(BaseModel):
-    id_student:     str
-    full_name:      str
-    birth_date:     date
-    id_degree:      str
-    account_status: str
-    avatar_url:     Optional[str] = None
-    created_at:     Optional[datetime] = None
+    id_student:        str
+    full_name:         str
+    birth_date:        date
+    id_degree:         str
+    account_status:    str
+    avatar_url:        Optional[str] = None
+    identity_document: Optional[str] = None
+    access_code:       Optional[str] = None   # Solo se devuelve al crear
+    created_at:        Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+
+class StudentLoginRequest(BaseModel):
+    identity_document: str = Field(..., min_length=3)
+    access_code:       str = Field(..., min_length=4)
 
 
 # ============================================================
@@ -502,7 +526,8 @@ class MonitoringData(BaseModel):
     emotion:          Emocion = Emocion.neutro
     attention_level:  float   = Field(default=0.5, ge=0, le=1)
     stimming:         bool    = False
-    tactile_pressure: bool    = False   # Booleano en la DB
+    tactile_pressure: bool    = False
+    video_frame:      Optional[str] = None   # JPEG base64 para relay al tutor
 
 
 class MonitoringResponse(BaseModel):
@@ -655,3 +680,25 @@ class MonitoringWebSocketResponse(BaseModel):
     emocion_actual: str = "neutro"
     nivel_atencion: float = 0.5
     alerta_crisis:  Optional[str] = None
+
+
+# ============================================================
+# ADMIN
+# ============================================================
+
+class RegisterAdminRequest(BaseModel):
+    full_name: str
+    email: EmailStr
+    master_key: str   # debe coincidir con ADMIN_MASTER_KEY del .env
+
+class AdminLoginRequest(BaseModel):
+    email: EmailStr
+    access_code: str
+
+class AdminResponse(BaseModel):
+    id_admin: str
+    full_name: str
+    email: str
+    access_code: str
+    is_active: bool
+    created_at: Optional[datetime]

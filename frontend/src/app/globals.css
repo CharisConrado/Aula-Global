@@ -2,81 +2,580 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&display=swap');
 
+/* ── Paleta oficial (CSS custom properties) ──────────────────── */
+:root {
+  --bg-main:     #FDF8F2;
+  --bg-canvas:   #E1EFFF;
+  --brand:       #7FB3D5;
+  --support:     #A2D9A1;
+  --action:      #FFB37B;
+  --action-dark: #ff9450;
+  --reward:      #F9E79F;
+  --text-main:   #34495E;
+  --text-muted:  #7f8c8d;
+  --border-soft: #D5DBDB;
+  --border-brand: rgba(127, 179, 213, 0.35);
+  --shadow-soft:  0 2px 16px rgba(127, 179, 213, 0.12);
+  --shadow-card:  0 1px 8px rgba(52, 73, 94, 0.07), 0 4px 24px rgba(127, 179, 213, 0.10);
+}
+
+/* ── Base ─────────────────────────────────────────────────────── */
 @layer base {
   body {
-    @apply font-sans text-gray-800 bg-gray-50 antialiased;
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    @apply font-sans antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--text-main);
+    @apply font-bold;
+  }
+
+  ::selection {
+    background: rgba(127, 179, 213, 0.25);
+    color: var(--text-main);
   }
 }
 
+/* ── Components ──────────────────────────────────────────────── */
 @layer components {
-  /* Botón grande para niños */
+
+  /* ── Buttons ─────────────────────────────────── */
   .btn-kid {
-    @apply px-8 py-4 text-kid-base font-bold rounded-kid-lg
-           transition-all duration-300 ease-in-out
+    @apply inline-flex items-center justify-center gap-2
+           px-8 py-4 text-kid-base font-bold rounded-kid-lg
+           transition-all duration-200 ease-out
            focus:outline-none focus:ring-4 focus:ring-offset-2
-           active:scale-95 select-none;
+           active:scale-95 select-none cursor-pointer
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
   }
 
+  /* Primary CTA — Action orange */
   .btn-kid-primary {
-    @apply btn-kid bg-primary-400 text-white
-           hover:bg-primary-500 focus:ring-primary-300
-           shadow-lg hover:shadow-xl;
+    background: linear-gradient(135deg, #FFB37B 0%, #ff9450 100%);
+    color: white;
+    box-shadow: 0 4px 20px rgba(255, 148, 80, 0.38);
+    @apply btn-kid focus:ring-warm-300;
+  }
+  .btn-kid-primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #ff9450 0%, #f97825 100%);
+    box-shadow: 0 6px 28px rgba(255, 148, 80, 0.48);
+    transform: translateY(-1px) scale(1.01);
   }
 
+  /* Brand blue — nav, secondary actions */
+  .btn-kid-brand {
+    background: linear-gradient(135deg, #7FB3D5 0%, #5a9ec2 100%);
+    color: white;
+    box-shadow: 0 4px 20px rgba(127, 179, 213, 0.38);
+    @apply btn-kid focus:ring-primary-300;
+  }
+  .btn-kid-brand:hover:not(:disabled) {
+    background: linear-gradient(135deg, #5a9ec2 0%, #4587a9 100%);
+    box-shadow: 0 6px 28px rgba(127, 179, 213, 0.48);
+    transform: translateY(-1px) scale(1.01);
+  }
+
+  /* Green — success, progress */
   .btn-kid-calm {
-    @apply btn-kid bg-calm-400 text-white
-           hover:bg-calm-500 focus:ring-calm-300
-           shadow-lg hover:shadow-xl;
+    background: linear-gradient(135deg, #A2D9A1 0%, #7dc97c 100%);
+    color: white;
+    box-shadow: 0 4px 20px rgba(162, 217, 161, 0.38);
+    @apply btn-kid focus:ring-calm-300;
+  }
+  .btn-kid-calm:hover:not(:disabled) {
+    background: linear-gradient(135deg, #7dc97c 0%, #5eba5d 100%);
+    transform: translateY(-1px) scale(1.01);
   }
 
-  .btn-kid-warm {
-    @apply btn-kid bg-warm-400 text-white
-           hover:bg-warm-500 focus:ring-warm-300
-           shadow-lg hover:shadow-xl;
-  }
+  /* Alias */
+  .btn-kid-warm { @apply btn-kid-primary; }
 
-  /* Tarjeta suave para contenido */
+  /* ── Cards ───────────────────────────────────── */
   .card-kid {
-    @apply bg-white rounded-kid-lg p-6 shadow-md
-           border-2 border-gray-100
-           transition-all duration-300;
+    background: white;
+    border: 1.5px solid var(--border-soft);
+    box-shadow: var(--shadow-card);
+    @apply rounded-kid-lg p-6 transition-all duration-300;
   }
 
-  /* Input accesible */
+  .card-kid-hover {
+    @apply card-kid;
+  }
+  .card-kid-hover:hover {
+    box-shadow: 0 4px 32px rgba(127, 179, 213, 0.18);
+    transform: translateY(-2px);
+  }
+
+  .card-canvas {
+    background: var(--bg-canvas);
+    border: 1.5px solid var(--border-brand);
+    box-shadow: 0 2px 12px rgba(127, 179, 213, 0.10);
+    @apply rounded-kid-lg p-6 transition-all duration-300;
+  }
+
+  /* ── Inputs ──────────────────────────────────── */
   .input-kid {
-    @apply w-full px-6 py-4 text-kid-base rounded-kid
-           border-2 border-gray-200
-           focus:border-primary-400 focus:ring-4 focus:ring-primary-100
-           focus:outline-none transition-all duration-200
-           placeholder:text-gray-400;
+    display: block;
+    width: 100%;
+    padding: 0.875rem 1.25rem;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--text-main);
+    background: white;
+    border: 2px solid var(--border-soft);
+    border-radius: 0.875rem;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    outline: none;
+  }
+  .input-kid::placeholder {
+    color: #a0aec0;
+    font-weight: 400;
+  }
+  .input-kid:focus {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 4px rgba(127, 179, 213, 0.18);
+    background: #fafeff;
+  }
+  .input-kid:hover:not(:focus) {
+    border-color: #b5daf0;
   }
 
-  /* Pantalla calmante para pausas visuales */
+  /* ── Calming screen ──────────────────────────── */
   .calming-screen {
-    @apply fixed inset-0 z-50 flex items-center justify-center
-           bg-gradient-to-br from-blue-100 via-green-50 to-purple-100;
+    @apply fixed inset-0 z-50 flex items-center justify-center;
+    background: linear-gradient(135deg, #E1EFFF 0%, #FDF8F2 50%, #e2f6e1 100%);
   }
+
+  /* ── Utility badges ──────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold;
+  }
+  .badge-brand  { background: rgba(127,179,213,0.15); color: #4587a9; }
+  .badge-green  { background: rgba(162,217,161,0.20); color: #3d9e3e; }
+  .badge-orange { background: rgba(255,179,123,0.20); color: #f97825; }
+  .badge-yellow { background: rgba(249,231,159,0.40); color: #b7880e; }
+  .badge-red    { background: rgba(239,68,68,0.10);   color: #dc2626; }
 }
 
-/* Animación de respiración para pantalla calmante */
+/* ── Animations ──────────────────────────────────────────────── */
 @keyframes breathe {
-  0%, 100% { transform: scale(1); opacity: 0.6; }
-  50% { transform: scale(1.2); opacity: 1; }
+  0%, 100% { transform: scale(1);   opacity: 0.7; }
+  50%       { transform: scale(1.2); opacity: 1;   }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0);   }
+  50%       { transform: translateY(-8px); }
+}
+@keyframes pop-in {
+  0%   { transform: scale(0.85); opacity: 0; }
+  70%  { transform: scale(1.04); }
+  100% { transform: scale(1);    opacity: 1; }
+}
+@keyframes slide-up {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
 }
 
-.animate-breathe {
-  animation: breathe 4s ease-in-out infinite;
+.animate-breathe  { animation: breathe  4s ease-in-out infinite; }
+.animate-float    { animation: float    3s ease-in-out infinite; }
+.animate-pop-in   { animation: pop-in   0.4s cubic-bezier(.34,1.56,.64,1) forwards; }
+.animate-slide-up { animation: slide-up 0.35s ease-out forwards; }
+
+/* ── Scrollbar ───────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: var(--bg-main); border-radius: 999px; }
+::-webkit-scrollbar-thumb  { background: var(--border-soft); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--brand); }
+
+/* ═══════════════════════════════════════════════════════════════
+   PERFIL SENSORIAL — Adaptaciones dinámicas
+   Los atributos `data-*` se aplican en <html> vía useSensoryProfile()
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Tamaño de texto: escala global vía rem (más dramática para ser notable) ── */
+html[data-font-size="pequeno"] { font-size: 13px; }   /* ~19% más pequeño */
+html[data-font-size="normal"]  { font-size: 16px; }   /* default */
+html[data-font-size="grande"]  { font-size: 21px; }   /* ~31% más grande */
+
+/* Refuerzo: también afectar a body por si algún componente fija font-size en body */
+html[data-font-size="pequeno"] body { font-size: 13px; }
+html[data-font-size="grande"]  body { font-size: 21px; }
+
+/* Algunos componentes definen tamaños vía text-[10px] o estilos absolutos.
+   En modo "grande" forzamos un mínimo para que se note el cambio. */
+html[data-font-size="grande"] .student-shell .text-\[10px\],
+html[data-font-size="grande"] .student-shell .text-\[11px\] {
+  font-size: 13px !important;
+}
+html[data-font-size="grande"] .student-shell .text-xs { font-size: 0.95rem !important; }
+html[data-font-size="grande"] .student-shell .text-sm { font-size: 1.05rem !important; }
+
+html[data-font-size="pequeno"] .student-shell .text-base { font-size: 0.85rem !important; }
+html[data-font-size="pequeno"] .student-shell .text-lg   { font-size: 0.95rem !important; }
+html[data-font-size="pequeno"] .student-shell .text-xl   { font-size: 1.05rem !important; }
+
+/* ── Velocidad de animaciones: escala global ── */
+html[data-anim-speed="lenta"]  { --anim-scale: 2.2; }
+html[data-anim-speed="normal"] { --anim-scale: 1;   }
+html[data-anim-speed="rapida"] { --anim-scale: 0.55; }
+html { --anim-scale: 1; }
+
+/* Animaciones globales escaladas */
+html[data-anim-speed="lenta"]  .animate-breathe { animation-duration: 8.8s; }
+html[data-anim-speed="rapida"] .animate-breathe { animation-duration: 2.2s; }
+html[data-anim-speed="lenta"]  .animate-float   { animation-duration: 6.6s; }
+html[data-anim-speed="rapida"] .animate-float   { animation-duration: 1.6s; }
+html[data-anim-speed="lenta"]  .animate-pop-in  { animation-duration: 0.88s; }
+html[data-anim-speed="rapida"] .animate-pop-in  { animation-duration: 0.22s; }
+html[data-anim-speed="lenta"]  .animate-slide-up { animation-duration: 0.77s; }
+html[data-anim-speed="rapida"] .animate-slide-up { animation-duration: 0.20s; }
+
+/* ── Contraste BAJO: tonos pastel cálidos, baja estimulación ── */
+html[data-contrast="bajo"] {
+  --bg-main:     #FFFBF5;
+  --bg-canvas:   #FBF4EA;
+  --text-main:   #5d6d7e;
+  --text-muted:  #95a5a6;
+  --border-soft: #EAE0D0;
+  --brand:       #B5DAF0;
+  --action:      #FFD9B8;
+  --action-dark: #FFB37B;
+  --support:     #C9E8C8;
 }
 
-/* Scrollbar suave */
-::-webkit-scrollbar {
-  width: 8px;
+/* ── Contraste ALTO: alto contraste para lectores con baja visión ── */
+html[data-contrast="alto"] {
+  --bg-main:     #0F172A;
+  --bg-canvas:   #1E293B;
+  --text-main:   #FFFFFF;
+  --text-muted:  #CBD5E1;
+  --border-soft: #475569;
+  --brand:       #5EBEFF;
+  --action:      #FFB37B;
+  --action-dark: #FF9450;
+  --support:     #6EE7B7;
 }
-::-webkit-scrollbar-track {
-  @apply bg-gray-100 rounded-full;
+html[data-contrast="alto"] body                  { background-color: #0F172A; color: #FFFFFF; }
+html[data-contrast="alto"] .card-kid,
+html[data-contrast="alto"] .card-kid-hover       { background: #1E293B !important; border-color: #475569 !important; color: #FFFFFF; }
+html[data-contrast="alto"] .card-canvas          { background: #334155 !important; border-color: #5EBEFF !important; color: #FFFFFF; }
+html[data-contrast="alto"] .input-kid            { background: #1E293B !important; border-color: #475569 !important; color: #FFFFFF !important; }
+html[data-contrast="alto"] .input-kid::placeholder { color: #94A3B8; }
+html[data-contrast="alto"] h1,
+html[data-contrast="alto"] h2,
+html[data-contrast="alto"] h3,
+html[data-contrast="alto"] h4,
+html[data-contrast="alto"] h5,
+html[data-contrast="alto"] h6                    { color: #FFFFFF !important; }
+
+/* En contraste alto, oscurecer fondos blancos y aclarar textos oscuros — afecta a inline styles */
+html[data-contrast="alto"] [style*="background: white"],
+html[data-contrast="alto"] [style*="background:#fff"],
+html[data-contrast="alto"] [style*="background: #fff"],
+html[data-contrast="alto"] [style*="backgroundColor: \"white\""],
+html[data-contrast="alto"] [style*="background-color: white"],
+html[data-contrast="alto"] [style*="background-color:#fff"] {
+  background: #1E293B !important;
+  color: #FFFFFF !important;
+  border-color: #475569 !important;
 }
-::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded-full hover:bg-gray-400;
+
+/* Forzar texto claro sobre los grises oscuros típicos del diseño */
+html[data-contrast="alto"] [style*="color: \"#34495E\""],
+html[data-contrast="alto"] [style*="color:#34495E"],
+html[data-contrast="alto"] [style*="color: \"#7f8c8d\""],
+html[data-contrast="alto"] [style*="color:#7f8c8d"],
+html[data-contrast="alto"] [style*="color: \"#a0aec0\""],
+html[data-contrast="alto"] [style*="color:#a0aec0"] {
+  color: #E2E8F0 !important;
+}
+
+/* Banner de pausas: visible solo si el estudiante las necesita */
+html[data-needs-breaks="false"] .needs-breaks-only { display: none; }
+
+/* En contraste alto, también ajustar clases Tailwind comunes */
+html[data-contrast="alto"] .bg-white,
+html[data-contrast="alto"] .bg-gray-50,
+html[data-contrast="alto"] .bg-gray-100 {
+  background-color: #1E293B !important;
+  color: #FFFFFF;
+}
+html[data-contrast="alto"] .text-gray-400,
+html[data-contrast="alto"] .text-gray-500,
+html[data-contrast="alto"] .text-gray-600,
+html[data-contrast="alto"] .text-gray-700,
+html[data-contrast="alto"] .text-gray-800 {
+  color: #E2E8F0 !important;
+}
+html[data-contrast="alto"] .border-gray-100,
+html[data-contrast="alto"] .border-gray-200,
+html[data-contrast="alto"] .border-gray-300 {
+  border-color: #475569 !important;
+}
+
+/* En contraste bajo, suavizar fondos blancos puros a tono crema */
+html[data-contrast="bajo"] .bg-white {
+  background-color: #FFFBF5 !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   STUDENT-SHELL — overrides agresivos para inline styles del estudiante
+   Marcador `.student-shell` en el div raíz de /estudiante/* + alto contraste
+═══════════════════════════════════════════════════════════════ */
+
+/* Fondo base del shell en alto contraste */
+html[data-contrast="alto"] .student-shell {
+  background-color: #0F172A !important;
+  color: #FFFFFF;
+}
+
+/* ── Fondos blancos / cream ── */
+html[data-contrast="alto"] .student-shell [style*="background: white"],
+html[data-contrast="alto"] .student-shell [style*="background:white"],
+html[data-contrast="alto"] .student-shell [style*="background: #fff"],
+html[data-contrast="alto"] .student-shell [style*="background:#fff"],
+html[data-contrast="alto"] .student-shell [style*="background: #ffffff" i],
+html[data-contrast="alto"] .student-shell [style*="background:#ffffff" i],
+html[data-contrast="alto"] .student-shell [style*="backgroundColor: \"white\""],
+html[data-contrast="alto"] .student-shell [style*="backgroundColor:\"white\""],
+html[data-contrast="alto"] .student-shell [style*="background-color: white"],
+html[data-contrast="alto"] .student-shell [style*="background-color:white"],
+html[data-contrast="alto"] .student-shell [style*="background: #FDF8F2" i],
+html[data-contrast="alto"] .student-shell [style*="background:#FDF8F2" i],
+html[data-contrast="alto"] .student-shell [style*="backgroundColor: \"#FDF8F2\"" i],
+html[data-contrast="alto"] .student-shell [style*="backgroundColor:\"#FDF8F2\"" i],
+html[data-contrast="alto"] .student-shell [style*="background: \"#fafafa\"" i],
+html[data-contrast="alto"] .student-shell [style*="background: \"#f5f5f5\"" i],
+html[data-contrast="alto"] .student-shell [style*="background: #f8f9fa" i],
+html[data-contrast="alto"] .student-shell [style*="background:#f8f9fa" i],
+html[data-contrast="alto"] .student-shell [style*="background: #f3f4f6" i],
+html[data-contrast="alto"] .student-shell [style*="background:#f3f4f6" i] {
+  background-color: #1E293B !important;
+  background: #1E293B !important;
+  color: #FFFFFF;
+}
+
+/* Tonos azules canvas */
+html[data-contrast="alto"] .student-shell [style*="background: #E1EFFF" i],
+html[data-contrast="alto"] .student-shell [style*="background:#E1EFFF" i],
+html[data-contrast="alto"] .student-shell [style*="backgroundColor: \"#E1EFFF\"" i] {
+  background-color: #334155 !important;
+  background: #334155 !important;
+  color: #FFFFFF;
+}
+
+/* Verdes y pasteles cálidos a oscuros */
+html[data-contrast="alto"] .student-shell [style*="background: #f0fdf4" i],
+html[data-contrast="alto"] .student-shell [style*="background:#f0fdf4" i],
+html[data-contrast="alto"] .student-shell [style*="background: #dcfce7" i],
+html[data-contrast="alto"] .student-shell [style*="background:#dcfce7" i] {
+  background-color: #1E2F2A !important;
+  background: #1E2F2A !important;
+  color: #6EE7B7;
+}
+html[data-contrast="alto"] .student-shell [style*="background: #FFE4D4" i],
+html[data-contrast="alto"] .student-shell [style*="background:#FFE4D4" i] {
+  background-color: #3B2A1F !important;
+  background: #3B2A1F !important;
+  color: #FFB37B;
+}
+
+/* ── Textos: oscuros → claros ── */
+html[data-contrast="alto"] .student-shell [style*="color: #34495E" i],
+html[data-contrast="alto"] .student-shell [style*="color:#34495E" i],
+html[data-contrast="alto"] .student-shell [style*="color: \"#34495E\"" i] {
+  color: #FFFFFF !important;
+}
+html[data-contrast="alto"] .student-shell [style*="color: #7f8c8d" i],
+html[data-contrast="alto"] .student-shell [style*="color:#7f8c8d" i],
+html[data-contrast="alto"] .student-shell [style*="color: \"#7f8c8d\"" i] {
+  color: #CBD5E1 !important;
+}
+html[data-contrast="alto"] .student-shell [style*="color: #a0aec0" i],
+html[data-contrast="alto"] .student-shell [style*="color:#a0aec0" i],
+html[data-contrast="alto"] .student-shell [style*="color: \"#a0aec0\"" i] {
+  color: #94A3B8 !important;
+}
+html[data-contrast="alto"] .student-shell [style*="color: #D5DBDB" i],
+html[data-contrast="alto"] .student-shell [style*="color:#D5DBDB" i] {
+  color: #475569 !important;
+}
+
+/* Marcas y accents: mantener vivos pero ajustados a fondo oscuro */
+html[data-contrast="alto"] .student-shell [style*="color: #4587a9" i],
+html[data-contrast="alto"] .student-shell [style*="color:#4587a9" i],
+html[data-contrast="alto"] .student-shell [style*="color: \"#4587a9\"" i] {
+  color: #5EBEFF !important;
+}
+html[data-contrast="alto"] .student-shell [style*="color: #7FB3D5" i],
+html[data-contrast="alto"] .student-shell [style*="color:#7FB3D5" i] {
+  color: #7DD3FC !important;
+}
+
+/* ── Bordes default ── */
+html[data-contrast="alto"] .student-shell [style*="border: 1px solid #D5DBDB" i],
+html[data-contrast="alto"] .student-shell [style*="border:1px solid #D5DBDB" i],
+html[data-contrast="alto"] .student-shell [style*="border: 1.5px solid #D5DBDB" i],
+html[data-contrast="alto"] .student-shell [style*="border:1.5px solid #D5DBDB" i],
+html[data-contrast="alto"] .student-shell [style*="border: 2px solid #D5DBDB" i],
+html[data-contrast="alto"] .student-shell [style*="border:2px solid #D5DBDB" i],
+html[data-contrast="alto"] .student-shell [style*="borderRight: 1.5px solid #D5DBDB" i],
+html[data-contrast="alto"] .student-shell [style*="borderBottom: 1.5px solid #D5DBDB" i],
+html[data-contrast="alto"] .student-shell [style*="borderTop: 1.5px solid #D5DBDB" i] {
+  border-color: #475569 !important;
+}
+
+/* ── Top bar transparente con backdrop blur (header del estudiante) ── */
+html[data-contrast="alto"] .student-shell [style*="rgba(253,248,242" i],
+html[data-contrast="alto"] .student-shell [style*="rgba(253, 248, 242" i] {
+  background: rgba(15, 23, 42, 0.92) !important;
+  background-color: rgba(15, 23, 42, 0.92) !important;
+}
+
+/* ── Tarjetas/botones con gradientes de fondo cálidos: tonificar ── */
+html[data-contrast="alto"] .student-shell button,
+html[data-contrast="alto"] .student-shell .card-kid,
+html[data-contrast="alto"] .student-shell aside,
+html[data-contrast="alto"] .student-shell header,
+html[data-contrast="alto"] .student-shell main {
+  color: inherit;
+}
+
+/* SVG/iconos: aplicar currentColor para que respeten el texto */
+html[data-contrast="alto"] .student-shell svg:not([data-keep-color]) {
+  color: inherit;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   STUDENT-SHELL — Contraste BAJO (paleta crema/durazno muy suave,
+   sin estímulos visuales fuertes, ideal para hipersensibilidad sensorial)
+═══════════════════════════════════════════════════════════════ */
+
+/* Fondo base */
+html[data-contrast="bajo"] .student-shell {
+  background-color: #FAF3E8 !important;
+  color: #6B7280;
+}
+
+/* ── Fondos blancos / cream / grises → tonos crema muy suaves ── */
+html[data-contrast="bajo"] .student-shell [style*="background: white"],
+html[data-contrast="bajo"] .student-shell [style*="background:white"],
+html[data-contrast="bajo"] .student-shell [style*="background: #fff" i],
+html[data-contrast="bajo"] .student-shell [style*="background:#fff" i],
+html[data-contrast="bajo"] .student-shell [style*="background: #ffffff" i],
+html[data-contrast="bajo"] .student-shell [style*="backgroundColor: \"white\""],
+html[data-contrast="bajo"] .student-shell [style*="backgroundColor:\"white\""],
+html[data-contrast="bajo"] .student-shell [style*="background-color: white"],
+html[data-contrast="bajo"] .student-shell [style*="background-color:white"],
+html[data-contrast="bajo"] .student-shell [style*="background: #FDF8F2" i],
+html[data-contrast="bajo"] .student-shell [style*="background:#FDF8F2" i],
+html[data-contrast="bajo"] .student-shell [style*="backgroundColor: \"#FDF8F2\"" i],
+html[data-contrast="bajo"] .student-shell [style*="background: \"#fafafa\"" i],
+html[data-contrast="bajo"] .student-shell [style*="background: \"#f5f5f5\"" i],
+html[data-contrast="bajo"] .student-shell [style*="background: #f8f9fa" i],
+html[data-contrast="bajo"] .student-shell [style*="background:#f8f9fa" i],
+html[data-contrast="bajo"] .student-shell [style*="background: #f3f4f6" i],
+html[data-contrast="bajo"] .student-shell [style*="background:#f3f4f6" i] {
+  background-color: #FFFBF5 !important;
+  background: #FFFBF5 !important;
+}
+
+/* Tonos azules canvas → crema rosado */
+html[data-contrast="bajo"] .student-shell [style*="background: #E1EFFF" i],
+html[data-contrast="bajo"] .student-shell [style*="background:#E1EFFF" i],
+html[data-contrast="bajo"] .student-shell [style*="backgroundColor: \"#E1EFFF\"" i] {
+  background-color: #F4EAD9 !important;
+  background: #F4EAD9 !important;
+}
+
+/* Verdes pastel → menta muy pálida */
+html[data-contrast="bajo"] .student-shell [style*="background: #f0fdf4" i],
+html[data-contrast="bajo"] .student-shell [style*="background:#f0fdf4" i],
+html[data-contrast="bajo"] .student-shell [style*="background: #dcfce7" i],
+html[data-contrast="bajo"] .student-shell [style*="background:#dcfce7" i] {
+  background-color: #EFF7EC !important;
+  background: #EFF7EC !important;
+}
+
+/* Naranja claro → crema durazno muy suave */
+html[data-contrast="bajo"] .student-shell [style*="background: #FFE4D4" i],
+html[data-contrast="bajo"] .student-shell [style*="background:#FFE4D4" i] {
+  background-color: #FBEFE3 !important;
+  background: #FBEFE3 !important;
+}
+
+/* ── Textos: oscuros → grises suaves ── */
+html[data-contrast="bajo"] .student-shell [style*="color: #34495E" i],
+html[data-contrast="bajo"] .student-shell [style*="color:#34495E" i],
+html[data-contrast="bajo"] .student-shell [style*="color: \"#34495E\"" i] {
+  color: #6B7280 !important;
+}
+html[data-contrast="bajo"] .student-shell [style*="color: #7f8c8d" i],
+html[data-contrast="bajo"] .student-shell [style*="color:#7f8c8d" i],
+html[data-contrast="bajo"] .student-shell [style*="color: \"#7f8c8d\"" i] {
+  color: #9CA3AF !important;
+}
+html[data-contrast="bajo"] .student-shell [style*="color: #a0aec0" i],
+html[data-contrast="bajo"] .student-shell [style*="color:#a0aec0" i] {
+  color: #B0BEC5 !important;
+}
+
+/* Brand colors atenuados */
+html[data-contrast="bajo"] .student-shell [style*="color: #4587a9" i],
+html[data-contrast="bajo"] .student-shell [style*="color:#4587a9" i] {
+  color: #7CA8C1 !important;
+}
+html[data-contrast="bajo"] .student-shell [style*="color: #7FB3D5" i],
+html[data-contrast="bajo"] .student-shell [style*="color:#7FB3D5" i] {
+  color: #A4C7DD !important;
+}
+
+/* ── Bordes default suavizados ── */
+html[data-contrast="bajo"] .student-shell [style*="border: 1px solid #D5DBDB" i],
+html[data-contrast="bajo"] .student-shell [style*="border:1px solid #D5DBDB" i],
+html[data-contrast="bajo"] .student-shell [style*="border: 1.5px solid #D5DBDB" i],
+html[data-contrast="bajo"] .student-shell [style*="border:1.5px solid #D5DBDB" i],
+html[data-contrast="bajo"] .student-shell [style*="border: 2px solid #D5DBDB" i],
+html[data-contrast="bajo"] .student-shell [style*="border:2px solid #D5DBDB" i],
+html[data-contrast="bajo"] .student-shell [style*="borderRight: 1.5px solid #D5DBDB" i],
+html[data-contrast="bajo"] .student-shell [style*="borderBottom: 1.5px solid #D5DBDB" i],
+html[data-contrast="bajo"] .student-shell [style*="borderTop: 1.5px solid #D5DBDB" i] {
+  border-color: #E5DDD0 !important;
+}
+
+/* Header sticky con backdrop blur */
+html[data-contrast="bajo"] .student-shell [style*="rgba(253,248,242" i],
+html[data-contrast="bajo"] .student-shell [style*="rgba(253, 248, 242" i] {
+  background: rgba(250, 243, 232, 0.92) !important;
+  background-color: rgba(250, 243, 232, 0.92) !important;
+}
+
+/* Gradientes y botones primarios atenuados ligeramente para reducir estímulo */
+html[data-contrast="bajo"] .student-shell button[style*="linear-gradient" i] {
+  filter: saturate(0.75) brightness(1.02);
+}
+html[data-contrast="bajo"] .student-shell [style*="linear-gradient(135deg,#FFB37B" i],
+html[data-contrast="bajo"] .student-shell [style*="linear-gradient(135deg, #FFB37B" i] {
+  filter: saturate(0.7);
+}
+
+/* Sombras agresivas → sombras muy suaves */
+html[data-contrast="bajo"] .student-shell [style*="boxShadow" i] {
+  box-shadow: 0 1px 4px rgba(180, 160, 130, 0.10) !important;
+}
+html[data-contrast="bajo"] .student-shell [style*="box-shadow" i] {
+  box-shadow: 0 1px 4px rgba(180, 160, 130, 0.10) !important;
+}
+
+/* Bordes Tailwind comunes */
+html[data-contrast="bajo"] .student-shell .border-gray-100,
+html[data-contrast="bajo"] .student-shell .border-gray-200,
+html[data-contrast="bajo"] .student-shell .border-gray-300 {
+  border-color: #E5DDD0 !important;
 }

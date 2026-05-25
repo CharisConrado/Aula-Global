@@ -41,6 +41,24 @@ export async function apiFetch<T>(
   return response.json();
 }
 
+/** Rango de fechas opcional para los reportes. */
+export interface ReportDateRange {
+  start_date?: string;   // YYYY-MM-DD
+  end_date?: string;     // YYYY-MM-DD
+}
+
+/** Helper: serializa el rango como query string (?start_date=…&end_date=…). */
+function buildRangeQuery(range?: ReportDateRange, fallbackDays?: number): string {
+  const params: string[] = [];
+  if (range?.start_date && range?.end_date) {
+    params.push(`start_date=${range.start_date}`);
+    params.push(`end_date=${range.end_date}`);
+  } else if (fallbackDays != null) {
+    params.push(`days=${fallbackDays}`);
+  }
+  return params.length ? `?${params.join("&")}` : "";
+}
+
 export const api = {
   // ── Auth ──────────────────────────────────────────────────────────────────
   login: (email: string, password: string) =>
@@ -52,6 +70,17 @@ export const api = {
     }>("/api/auth/login", {
       method: "POST",
       body: { email, password },
+    }),
+
+  loginStudent: (identity_document: string, access_code: string) =>
+    apiFetch<{
+      access_token: string;
+      token_type: string;
+      rol: string;
+      user_id: string;
+    }>("/api/auth/login/student", {
+      method: "POST",
+      body: { identity_document, access_code },
     }),
 
   registerTutor: (data: {
@@ -103,7 +132,18 @@ export const api = {
       full_name: string;
       birth_date: string;
       id_degree: string;
+      identity_document?: string;
       avatar_url?: string;
+      profile?: {
+        volume_level?:    number;
+        visual_contrast?: string;
+        feedback_type?:   string;
+        font_size?:       string;
+        animation_speed?: string;
+        max_session_min?: number;
+        needs_breaks?:    boolean;
+        break_interval?:  number;
+      };
     }
   ) =>
     apiFetch<StudentResponse>("/api/students", {
@@ -112,6 +152,45 @@ export const api = {
       token,
     }),
 
+  // ── Diagnoses ─────────────────────────────────────────────────────────────
+  getDiagnosisTypes: () =>
+    apiFetch<{ id_type_diagnosis: string; name: string }[]>("/api/activities/diagnosis-types"),
+
+  listStudentDiagnoses: (token: string, studentId: string) =>
+    apiFetch<DiagnosisResponse[]>(`/api/students/${studentId}/diagnosis`, { token }),
+
+  uploadStudentDiagnosis: async (
+    token: string,
+    studentId: string,
+    data: { id_type_diagnosis: string; description?: string; file: File }
+  ): Promise<DiagnosisResponse> => {
+    const fd = new FormData();
+    fd.append("id_type_diagnosis", data.id_type_diagnosis);
+    if (data.description) fd.append("description", data.description);
+    fd.append("file", data.file);
+
+    const res = await fetch(`${API_URL}/api/students/${studentId}/diagnosis/upload`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Error al subir el diagnóstico" }));
+      throw new Error(err.detail || `Error ${res.status}`);
+    }
+    return res.json();
+  },
+
+  deleteStudentDiagnosis: (token: string, studentId: string, diagnosisId: string) =>
+    apiFetch<void>(`/api/students/${studentId}/diagnosis/${diagnosisId}`, {
+      method: "DELETE",
+      token,
+    }),
+
+  /** Convierte un document_url relativo (/uploads/...) en URL absoluta para descargar. */
+  absoluteUploadUrl: (path: string | null | undefined): string =>
+    !path ? "" : (path.startsWith("http") ? path : `${API_URL}${path}`),
+
   getStudentProfile: (token: string, id: string) =>
     apiFetch<ProfileResponse>(`/api/students/${id}/profile`, { token }),
 
@@ -119,6 +198,12 @@ export const api = {
     apiFetch<ProfileResponse>(`/api/students/${id}/profile`, {
       method: "PUT",
       body: data,
+      token,
+    }),
+
+  deleteStudent: (token: string, id: string) =>
+    apiFetch<void>(`/api/students/${id}`, {
+      method: "DELETE",
       token,
     }),
 
@@ -233,6 +318,187 @@ export const api = {
       { token }
     ),
 
+  // ── Tutors ────────────────────────────────────────────────────────────────
+  getTutors: (token: string) =>
+    apiFetch<TutorResponse[]>("/api/tutors/", { token }),
+
+  getTutor: (token: string, id: string) =>
+    apiFetch<TutorResponse>(`/api/tutors/${id}`, { token }),
+
+  updateTutor: (
+    token: string,
+    id: string,
+    data: { full_name?: string; phone?: string; relationship_type?: string }
+  ) =>
+    apiFetch<TutorResponse>(`/api/tutors/${id}`, {
+      method: "PUT",
+      body: data,
+      token,
+    }),
+
+  deleteTutor: (token: string, id: string) =>
+    apiFetch<void>(`/api/tutors/${id}`, { method: "DELETE", token }),
+
+  getTutorStudents: (token: string, tutorId: string) =>
+    apiFetch<StudentResponse[]>(`/api/tutors/${tutorId}/students`, { token }),
+
+  assignStudentToTutor: (token: string, tutorId: string, studentId: string) =>
+    apiFetch<{ id_responsible: string }>(
+      `/api/tutors/${tutorId}/assign/${studentId}`,
+      { method: "POST", token }
+    ),
+
+  // ── Professionals ─────────────────────────────────────────────────────────
+  getProfessionals: (token: string) =>
+    apiFetch<ProfessionalResponse[]>("/api/professionals/", { token }),
+
+  getProfessional: (token: string, id: string) =>
+    apiFetch<ProfessionalResponse>(`/api/professionals/${id}`, { token }),
+
+  updateProfessional: (
+    token: string,
+    id: string,
+    data: {
+      full_name?: string;
+      license_number?: string;
+      speciality?: string;
+      phone?: string;
+      verification_status?: string;
+    }
+  ) =>
+    apiFetch<ProfessionalResponse>(`/api/professionals/${id}`, {
+      method: "PUT",
+      body: data,
+      token,
+    }),
+
+  deleteProfessional: (token: string, id: string) =>
+    apiFetch<void>(`/api/professionals/${id}`, { method: "DELETE", token }),
+
+  // ── Admin-only user creation ──────────────────────────────────────────────
+  adminCreateTutor: (
+    token: string,
+    data: {
+      full_name: string;
+      email: string;
+      password: string;
+      phone?: string;
+      relationship_type?: string;
+    }
+  ) =>
+    apiFetch<TutorResponse>("/api/auth/admin/create-tutor", {
+      method: "POST",
+      body: data,
+      token,
+    }),
+
+  adminCreateProfessional: (
+    token: string,
+    data: {
+      full_name: string;
+      email: string;
+      password: string;
+      speciality?: string;
+      license_number?: string;
+      phone?: string;
+    }
+  ) =>
+    apiFetch<ProfessionalResponse>("/api/auth/admin/create-professional", {
+      method: "POST",
+      body: data,
+      token,
+    }),
+
+  adminCreateStudent: (
+    token: string,
+    tutorId: string,
+    data: {
+      full_name: string;
+      birth_date: string;
+      id_degree: string;
+      identity_document: string;
+    }
+  ) =>
+    apiFetch<StudentResponse>(
+      `/api/students/admin-create?tutor_id=${tutorId}`,
+      { method: "POST", body: data, token }
+    ),
+
+  updateStudent: (
+    token: string,
+    id: string,
+    data: {
+      full_name?: string;
+      birth_date?: string;
+      id_degree?: string;
+      account_status?: string;
+      identity_document?: string;
+    }
+  ) =>
+    apiFetch<StudentResponse>(`/api/students/${id}`, {
+      method: "PUT",
+      body: data,
+      token,
+    }),
+
+  // ── Reports (admin only) ──────────────────────────────────────────────────
+  getReportOverview: (token: string, range?: ReportDateRange) =>
+    apiFetch<ReportOverview>(
+      `/api/reports/overview${buildRangeQuery(range)}`,
+      { token }
+    ),
+
+  getReportSessionsOverTime: (token: string, range?: ReportDateRange) =>
+    apiFetch<{ date: string; count: number }[]>(
+      `/api/reports/sessions-over-time${buildRangeQuery(range, 14)}`,
+      { token }
+    ),
+
+  getReportEmotionsDistribution: (token: string, range?: ReportDateRange) =>
+    apiFetch<{ emotion: string; count: number }[]>(
+      `/api/reports/emotions-distribution${buildRangeQuery(range, 30)}`,
+      { token }
+    ),
+
+  getReportAttentionTrend: (token: string, range?: ReportDateRange) =>
+    apiFetch<{ date: string; avg: number }[]>(
+      `/api/reports/attention-trend${buildRangeQuery(range, 14)}`,
+      { token }
+    ),
+
+  getReportCrisisSummary: (token: string, range?: ReportDateRange) =>
+    apiFetch<CrisisSummaryReport>(
+      `/api/reports/crisis-summary${buildRangeQuery(range, 90)}`,
+      { token }
+    ),
+
+  getReportTopActivities: (token: string, limit = 10, range?: ReportDateRange) => {
+    const q = buildRangeQuery(range);
+    const sep = q.includes("?") ? "&" : "?";
+    return apiFetch<TopActivity[]>(
+      `/api/reports/top-activities${q}${sep}limit=${limit}`,
+      { token }
+    );
+  },
+
+  getReportStudentsByGrade: (token: string) =>
+    apiFetch<{ grade_name: string; level: number; count: number }[]>(
+      "/api/reports/students-by-grade",
+      { token }
+    ),
+
+  getReportUsageBySubject: (token: string, range?: ReportDateRange) =>
+    apiFetch<UsageBySubject[]>(
+      `/api/reports/usage-by-subject${buildRangeQuery(range, 30)}`,
+      { token }
+    ),
+
+  getReportStimmingRate: (token: string, range?: ReportDateRange) =>
+    apiFetch<{ with_stimming: number; total_samples: number; rate: number }>(
+      `/api/reports/stimming-rate${buildRangeQuery(range, 30)}`,
+      { token }
+    ),
+
   // ── Interventions ─────────────────────────────────────────────────────────
   createIntervention: (token: string, data: InterventionCreate) =>
     apiFetch<InterventionResponse>("/api/interventions", {
@@ -267,29 +533,29 @@ export const api = {
 export interface StudentResponse {
   id_student: string;
   full_name: string;
-  birth_date: string;        // "YYYY-MM-DD"
+  birth_date: string;              // "YYYY-MM-DD"
   id_degree: string;
-  account_status: string;    // 'activo' | 'inactivo' | 'suspendido'
+  account_status: string;          // 'activo' | 'inactivo' | 'suspendido'
   avatar_url: string | null;
+  identity_document: string | null;
+  access_code: string | null;      // solo visible al crear (tutor)
   created_at: string;
 }
 
 export interface ProfileResponse {
   id_profile: string;
   id_student: string;
-  id_type_diagnosis: string | null;
-  visual_sensitivity: string | null;   // 'alta' | 'media' | 'baja'
-  auditory_sensitivity: string | null;
-  attention_base_level: number | null;
-  preferred_format: string | null;     // 'visual' | 'auditivo' | 'kinestesico' | 'mixto'
-  max_activity_time: number | null;
+  volume_level: number | null;         // 0-10
+  visual_contrast: string | null;      // 'bajo' | 'normal' | 'alto'
+  feedback_type: string | null;        // 'visual' | 'auditivo' | 'mixto'
+  font_size: string | null;            // 'pequeno' | 'normal' | 'grande'
+  animation_speed: string | null;      // 'lenta' | 'normal' | 'rapida'
+  max_session_min: number | null;      // minutos
   needs_breaks: boolean;
-  break_frequency: number | null;
-  high_contrast: boolean;
-  font_size: string | null;            // 'pequeno' | 'mediano' | 'grande'
-  additional_notes: string | null;
+  break_interval: number | null;       // minutos entre pausas
+  is_active: boolean;
+  start_date: string | null;
   created_at: string;
-  updated_at: string | null;
 }
 
 export interface SessionResponse {
@@ -434,6 +700,90 @@ export interface MonitoringStatus {
   stimming?: boolean;
   ultima_crisis?: string | null;
   mensaje?: string;
+}
+
+export interface DiagnosisResponse {
+  id_diagnosis: string;
+  id_student: string;
+  id_type_diagnosis: string;
+  description: string | null;
+  document_url: string | null;
+  registration_date: string | null;
+  created_at: string | null;
+}
+
+export interface ReportOverview {
+  users: {
+    students: number;
+    tutors: number;
+    professionals: number;
+    admins: number;
+    total: number;
+  };
+  content: {
+    activities: number;
+    monitoring_records: number;
+  };
+  sessions: {
+    total: number;
+    completed: number;
+    last_7_days: number;
+    active_students_7d: number;
+    avg_minutes: number;
+  };
+  crisis: {
+    total: number;
+    unresolved: number;
+  };
+  wellbeing: {
+    avg_attention_30d: number;
+  };
+}
+
+export interface CrisisSummaryReport {
+  by_severity: Record<string, number>;
+  by_status: { resolved: number; unresolved: number };
+  avg_resolution_minutes: number;
+  period_days: number;
+}
+
+export interface TopActivity {
+  id_activity: string;
+  title: string;
+  subject: string;
+  total_runs: number;
+  avg_score: number | null;
+  completion_rate: number;
+}
+
+export interface UsageBySubject {
+  subject: string;
+  runs: number;
+  completed: number;
+  avg_score: number | null;
+}
+
+export interface TutorResponse {
+  id_tutor: string;
+  full_name: string;
+  email: string;
+  relationship_type: string;
+  phone: string | null;
+  is_professional: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ProfessionalResponse {
+  id_professional: string;
+  full_name: string;
+  email: string;
+  license_number: string;
+  speciality: string;
+  phone: string | null;
+  verification_status: string;       // 'pendiente' | 'aprobado' | 'rechazado'
+  is_active: boolean;
+  created_at: string;
 }
 
 export interface MonitoringHistoryEntry {

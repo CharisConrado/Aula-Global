@@ -49,7 +49,7 @@ async def mi_perfil(
         text("""
             SELECT id_tutor, full_name, email, relationship_type, phone,
                    is_professional, is_active, created_at
-            FROM tutor WHERE id_tutor = :id::uuid AND is_active = true
+            FROM tutor WHERE id_tutor = CAST(:id AS uuid) AND is_active = true
         """),
         {"id": cu.user_id},
     ).fetchone()
@@ -68,7 +68,7 @@ async def obtener_tutor(
         text("""
             SELECT id_tutor, full_name, email, relationship_type, phone,
                    is_professional, is_active, created_at
-            FROM tutor WHERE id_tutor = :id::uuid AND is_active = true
+            FROM tutor WHERE id_tutor = CAST(:id AS uuid) AND is_active = true
         """),
         {"id": tutor_id},
     ).fetchone()
@@ -99,7 +99,7 @@ async def actualizar_tutor(
     updates["id"] = tutor_id
 
     result = db.execute(
-        text(f"UPDATE tutor SET {set_clause}, updated_at = NOW() WHERE id_tutor = :id::uuid AND is_active = true"),
+        text(f"UPDATE tutor SET {set_clause}, updated_at = NOW() WHERE id_tutor = CAST(:id AS uuid) AND is_active = true"),
         updates,
     )
     db.commit()
@@ -115,7 +115,7 @@ async def eliminar_tutor(
     cu:       TokenData = Depends(require_role(RolUsuario.admin)),
 ):
     result = db.execute(
-        text("UPDATE tutor SET is_active = false WHERE id_tutor = :id::uuid"),
+        text("UPDATE tutor SET is_active = false WHERE id_tutor = CAST(:id AS uuid)"),
         {"id": tutor_id},
     )
     db.commit()
@@ -138,7 +138,7 @@ async def estudiantes_del_tutor(
                    s.account_status, s.avatar_url, s.created_at
             FROM student s
             JOIN responsible_principal rp ON rp.id_student = s.id_student
-            WHERE rp.id_tutor = :tid::uuid AND rp.is_active = true
+            WHERE rp.id_tutor = CAST(:tid AS uuid) AND rp.is_active = true
               AND s.account_status != 'suspendido'
             ORDER BY s.full_name ASC
         """),
@@ -164,7 +164,7 @@ async def asignar_responsable(
 ):
     """Asigna un tutor como responsable de un estudiante."""
     existing = db.execute(
-        text("SELECT id_responsible FROM responsible_principal WHERE id_tutor = :tid::uuid AND id_student = :sid::uuid"),
+        text("SELECT id_responsible FROM responsible_principal WHERE id_tutor = CAST(:tid AS uuid) AND id_student = CAST(:sid AS uuid)"),
         {"tid": tutor_id, "sid": student_id},
     ).fetchone()
     if existing:
@@ -173,7 +173,7 @@ async def asignar_responsable(
     row = db.execute(
         text("""
             INSERT INTO responsible_principal (id_tutor, id_student, is_active)
-            VALUES (:tid::uuid, :sid::uuid, true)
+            VALUES (CAST(:tid AS uuid), CAST(:sid AS uuid), true)
             RETURNING id_responsible, id_tutor, id_student, assigned_date, is_active, created_at
         """),
         {"tid": tutor_id, "sid": student_id},

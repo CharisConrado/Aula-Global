@@ -39,7 +39,7 @@ async def crear_sesion(
     """Crea una nueva sesión para un estudiante. Cierra sesiones activas previas."""
     # Verificar estudiante
     student = db.execute(
-        text("SELECT id_student FROM student WHERE id_student = :id::uuid AND account_status = 'activo'"),
+        text("SELECT id_student FROM student WHERE id_student = CAST(:id AS uuid) AND account_status = 'activo'"),
         {"id": data.id_student},
     ).fetchone()
     if not student:
@@ -50,7 +50,7 @@ async def crear_sesion(
         text("""
             UPDATE session SET status = 'interrumpida', end_time = NOW(),
                 duration_sec = EXTRACT(EPOCH FROM (NOW() - start_time))::int
-            WHERE id_student = :sid::uuid AND status = 'activa'
+            WHERE id_student = CAST(:sid AS uuid) AND status = 'activa'
         """),
         {"sid": data.id_student},
     )
@@ -58,7 +58,7 @@ async def crear_sesion(
     row = db.execute(
         text("""
             INSERT INTO session (id_student, session_type, device, device_type, status)
-            VALUES (:id_student::uuid, :session_type, :device, :device_type, 'activa')
+            VALUES (CAST(:id_student AS uuid), :session_type, :device, :device_type, 'activa')
             RETURNING id_session, id_student, session_type, start_time, end_time,
                 duration_sec, device, device_type, status, created_at
         """),
@@ -89,7 +89,7 @@ async def listar_sesiones(
     params: dict = {}
 
     if student_id:
-        query += " AND id_student = :student_id::uuid"
+        query += " AND id_student = CAST(:student_id AS uuid)"
         params["student_id"] = student_id
 
     if activa is not None:
@@ -101,7 +101,7 @@ async def listar_sesiones(
         query += """
             AND id_student IN (
                 SELECT id_student FROM responsible_principal
-                WHERE id_tutor = :tutor_id::uuid AND is_active = true
+                WHERE id_tutor = CAST(:tutor_id AS uuid) AND is_active = true
             )
         """
         params["tutor_id"] = cu.user_id
@@ -123,7 +123,7 @@ async def obtener_sesion(
         text("""
             SELECT id_session, id_student, session_type, start_time, end_time,
                    duration_sec, device, device_type, status, created_at
-            FROM session WHERE id_session = :id::uuid
+            FROM session WHERE id_session = CAST(:id AS uuid)
         """),
         {"id": session_id},
     ).fetchone()
@@ -141,7 +141,7 @@ async def cerrar_sesion(
 ):
     """Cierra una sesión activa y calcula su duración."""
     session = db.execute(
-        text("SELECT id_session FROM session WHERE id_session = :id::uuid AND status = 'activa'"),
+        text("SELECT id_session FROM session WHERE id_session = CAST(:id AS uuid) AND status = 'activa'"),
         {"id": session_id},
     ).fetchone()
     if not session:
@@ -155,7 +155,7 @@ async def cerrar_sesion(
                 status       = :status,
                 end_time     = NOW(),
                 duration_sec = EXTRACT(EPOCH FROM (NOW() - start_time))::int
-            WHERE id_session = :id::uuid
+            WHERE id_session = CAST(:id AS uuid)
         """),
         {"id": session_id, "status": close_status},
     )
@@ -186,7 +186,7 @@ async def iniciar_actividad(
 ):
     # Verificar sesión activa
     session = db.execute(
-        text("SELECT id_session FROM session WHERE id_session = :id::uuid AND status = 'activa'"),
+        text("SELECT id_session FROM session WHERE id_session = CAST(:id AS uuid) AND status = 'activa'"),
         {"id": session_id},
     ).fetchone()
     if not session:
@@ -195,9 +195,9 @@ async def iniciar_actividad(
     row = db.execute(
         text("""
             INSERT INTO student_activity (id_student, id_activity, id_session,
-                achievement_level, had_crisis, tactile_pressure, stimming_detected, is_completed)
-            VALUES (:id_student::uuid, :id_activity::uuid, :id_session::uuid,
-                'en_progreso', false, false, false, false)
+                had_crisis, tactile_pressure, stimming_detected, is_completed)
+            VALUES (CAST(:id_student AS uuid), CAST(:id_activity AS uuid), CAST(:id_session AS uuid),
+                false, false, false, false)
             RETURNING id_student_activity, id_student, id_activity, id_session,
                 score, achievement_level, success_rate, stress_level, time_spent_sec,
                 had_crisis, tactile_pressure, stimming_detected, format_used,
@@ -230,7 +230,7 @@ async def actualizar_actividad(
     updates["sid"] = session_id
 
     db.execute(
-        text(f"UPDATE student_activity SET {', '.join(set_parts)} WHERE id_student_activity = :id::uuid AND id_session = :sid::uuid"),
+        text(f"UPDATE student_activity SET {', '.join(set_parts)} WHERE id_student_activity = CAST(:id AS uuid) AND id_session = CAST(:sid AS uuid)"),
         updates,
     )
     db.commit()
@@ -241,7 +241,7 @@ async def actualizar_actividad(
                 score, achievement_level, success_rate, stress_level, time_spent_sec,
                 had_crisis, tactile_pressure, stimming_detected, format_used,
                 qualitative_notes, completion_date, is_completed
-            FROM student_activity WHERE id_student_activity = :id::uuid
+            FROM student_activity WHERE id_student_activity = CAST(:id AS uuid)
         """),
         {"id": record_id},
     ).fetchone()
@@ -262,7 +262,7 @@ async def listar_actividades_sesion(
                 score, achievement_level, success_rate, stress_level, time_spent_sec,
                 had_crisis, tactile_pressure, stimming_detected, format_used,
                 qualitative_notes, completion_date, is_completed
-            FROM student_activity WHERE id_session = :sid::uuid
+            FROM student_activity WHERE id_session = CAST(:sid AS uuid)
             ORDER BY completion_date ASC
         """),
         {"sid": session_id},

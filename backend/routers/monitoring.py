@@ -60,6 +60,17 @@ async def ws_estudiante(websocket: WebSocket, student_id: str):
         while True:
             raw  = await websocket.receive_text()
             data = json.loads(raw)
+
+            # ── Mensaje liviano de solo video (alta frecuencia para videollamada) ──
+            if data.get("type") == "frame":
+                await _notify_tutors(student_id, {
+                    "type":        "frame_update",
+                    "student_id":  student_id,
+                    "video_frame": data.get("video_frame"),
+                })
+                continue
+
+            # ── Mensaje completo de monitoreo (cada 2s) ──
             monitoring = MonitoringData(**data)
 
             # Determinar qué acción tomar (motor de adaptación)
@@ -82,7 +93,7 @@ async def ws_estudiante(websocket: WebSocket, student_id: str):
                 text("""
                     INSERT INTO monitoring (id_session, emotion, attention_level,
                         stimming, tactile_pressure, action_taken)
-                    VALUES (:id_session::uuid, :emotion, :attention_level,
+                    VALUES (CAST(:id_session AS uuid), :emotion, :attention_level,
                         :stimming, :tactile_pressure, :action_taken)
                 """),
                 {
@@ -120,6 +131,7 @@ async def ws_estudiante(websocket: WebSocket, student_id: str):
                 "stimming":       monitoring.stimming,
                 "acciones":       resp_dict["acciones"],
                 "alerta_crisis":  response.alerta_crisis,
+                "video_frame":    monitoring.video_frame,
             })
 
     except WebSocketDisconnect:
@@ -208,7 +220,7 @@ def _registrar_crisis_auto(db: Session, session_id: str, student_id: str, nivel:
     recent = db.execute(
         text("""
             SELECT id_crisis FROM crisis
-            WHERE id_session = :sid::uuid AND id_student = :stid::uuid
+            WHERE id_session = CAST(:sid AS uuid) AND id_student = CAST(:stid AS uuid)
               AND resolved_at IS NULL
               AND detection_timestamp > NOW() - INTERVAL '2 minutes'
         """),
@@ -220,7 +232,7 @@ def _registrar_crisis_auto(db: Session, session_id: str, student_id: str, nivel:
     db.execute(
         text("""
             INSERT INTO crisis (id_session, id_type_crisis, id_action, id_student, required_human, notes)
-            VALUES (:session_id::uuid, :type_crisis_id::uuid, :action_id::uuid, :student_id::uuid, :req_human, :notes)
+            VALUES (CAST(:session_id AS uuid), CAST(:type_crisis_id AS uuid), CAST(:action_id AS uuid), CAST(:student_id AS uuid), :req_human, :notes)
         """),
         {
             "session_id":      session_id,
@@ -247,7 +259,7 @@ async def historial_monitoreo(
             SELECT id_monitoring, id_session, emotion, attention_level, stimming,
                    tactile_pressure, action_taken, detected_at
             FROM monitoring
-            WHERE id_session = :sid::uuid
+            WHERE id_session = CAST(:sid AS uuid)
             ORDER BY detected_at DESC
             LIMIT :limit
         """),
