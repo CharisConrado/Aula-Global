@@ -111,7 +111,7 @@ export default function EstudiantePage() {
 
   /* ── Marcar actividad completada (solo visual/local) ── */
   const markDone = (actId: string) => {
-    setCompletedSet(prev => new Set([...prev, actId]));
+    setCompletedSet(prev => new Set([...Array.from(prev), actId]));
   };
 
   /* ── Cerrar sesión y volver ── */

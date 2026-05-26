@@ -22,6 +22,30 @@ export interface ActivityCreatorFormProps {
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+// ── Opciones de tipo evaluativo (lo que el ESTUDIANTE hace) ────────────
+const TIPO_EVAL_OPTIONS = [
+  { value: "quiz",              emoji: "🧠", label: "Quiz",         desc: "Selección múltiple" },
+  { value: "emparejar",         emoji: "🔗", label: "Emparejar",    desc: "Unir conceptos" },
+  { value: "completar",         emoji: "✏️", label: "Completar",    desc: "Rellenar huecos" },
+  { value: "dibujo",            emoji: "🎨", label: "Dibujar",      desc: "Canvas libre" },
+  { value: "video_upload",      emoji: "🎥", label: "Video",        desc: "Grabar y entregar" },
+  { value: "ejercicio_archivo", emoji: "📐", label: "Ejercicio",    desc: "Resolver y subir" },
+  { value: "lectura",           emoji: "📖", label: "Lectura",      desc: "Leer y resumir" },
+] as const;
+
+type TipoEval = typeof TIPO_EVAL_OPTIONS[number]["value"];
+
+// Mapa tipoEval → nombre del tipo en la BD (para buscar el id_type_activity)
+const TIPO_EVAL_TO_DB: Record<TipoEval, string> = {
+  quiz:              "quiz",
+  emparejar:         "asociar",
+  completar:         "completar",
+  dibujo:            "dibujo",
+  video_upload:      "video",
+  ejercicio_archivo: "ejercicio",
+  lectura:           "lectura",
+};
+
 const QUIZ_COLORS = [
   { bg: "#e53935", light: "#ffebee" },
   { bg: "#1e88e5", light: "#e3f2fd" },
@@ -109,6 +133,51 @@ function FileUploadBtn({
             }} />
         </label>
       )}
+    </div>
+  );
+}
+
+// ── SimpleList (lista de strings) ─────────────────────────────────────
+function SimpleList({ items, placeholder, singularLabel, onChange }: {
+  items: string[]; placeholder: string; singularLabel: string;
+  onChange: (items: string[]) => void;
+}) {
+  const add    = () => onChange([...items, ""]);
+  const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i));
+  const update = (i: number, v: string) => {
+    const n = [...items]; n[i] = v; onChange(n);
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold" style={{ color: "#7f8c8d" }}>
+          {items.length} {singularLabel}{items.length !== 1 ? "s" : ""}
+        </span>
+        <button type="button" onClick={add}
+          className="flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg"
+          style={{ background: "#E1EFFF", color: "#4587a9" }}>
+          <Plus className="w-3 h-3" />Agregar
+        </button>
+      </div>
+      {items.map((item, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-white flex-shrink-0"
+            style={{ background: "#7FB3D5" }}>{i + 1}</span>
+          <input
+            type="text"
+            placeholder={placeholder}
+            value={item}
+            onChange={(e) => update(i, e.target.value)}
+            onFocus={focusBorder} onBlur={blurBorder}
+            style={{ ...inputBase, flex: 1, width: "auto", padding: "0.5rem 0.75rem" }}
+          />
+          {items.length > 1 && (
+            <button type="button" onClick={() => remove(i)}>
+              <Trash2 className="w-3.5 h-3.5" style={{ color: "#a0aec0" }} />
+            </button>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -211,7 +280,7 @@ function QuizBuilder({ preguntas, onChange }: { preguntas: QuizPregunta[]; onCha
   );
 }
 
-// ── ParesList (Memoria / Asociar) ─────────────────────────────────────
+// ── ParesList (Emparejar / Asociar) ───────────────────────────────────
 function ParesList({ pares, labelA, labelB, onAdd, onUpdate, onRemove }: {
   pares: Par[]; labelA: string; labelB: string;
   onAdd: () => void;
@@ -334,50 +403,35 @@ export default function ActivityCreatorForm({
   const [title,            setTitle]            = useState("");
   const [description,      setDescription]      = useState("");
   const [subjectId,        setSubjectId]        = useState("");
-  const [typeId,           setTypeId]           = useState(activityTypes[0]?.id_type_activity || "");
+  const [tipoEval,         setTipoEval]         = useState<TipoEval>("quiz");
   const [difficulty,       setDifficulty]       = useState<"facil" | "medio" | "dificil">("facil");
   const [estimatedMinutes, setEstimatedMinutes] = useState(20);
   const [instruction,      setInstruction]      = useState("");
 
   /* ── Presentación (todas las actividades) ── */
-  const [presentacionUrl,      setPresentacionUrl]      = useState<string | null>(null);
+  const [presentacionUrl,       setPresentacionUrl]       = useState<string | null>(null);
   const [presentacionUploading, setPresentacionUploading] = useState(false);
-
-  /* ── Archivo de contenido (Lectura / Video archivo) ── */
-  const [archivoUrl,      setArchivoUrl]      = useState<string | null>(null);
-  const [archivoUploading, setArchivoUploading] = useState(false);
-
-  /* ── Video ── */
-  const [videoMode,    setVideoMode]    = useState<"url" | "archivo">("url");
-  const [videoUrlText, setVideoUrlText] = useState("");
-
-  /* ── Ejercicio ── */
-  const [enunciado,        setEnunciado]        = useState("");
-  const [solucionUrl,      setSolucionUrl]      = useState<string | null>(null);
-  const [solucionUploading, setSolucionUploading] = useState(false);
 
   /* ── Quiz ── */
   const [preguntas, setPreguntas] = useState<QuizPregunta[]>([
     { texto: "", opciones: ["", "", "", ""], correcta: 0 },
   ]);
 
-  /* ── Memoria / Asociar / Arrastrar ── */
+  /* ── Emparejar ── */
   const [pares, setPares] = useState<Par[]>([{ a: "", b: "" }]);
 
   /* ── Completar ── */
   const [oraciones, setOraciones] = useState<Oracion[]>([{ texto: "", respuesta: "" }]);
 
-  /* ── Dibujo para colorear ── */
-  const [dibujoUrl,      setDibujoUrl]      = useState<string | null>(null);
-  const [dibujoUploading, setDibujoUploading] = useState(false);
+  /* ── Video upload: puntos clave que el estudiante debe cubrir ── */
+  const [puntosClave, setPuntosClave] = useState<string[]>([""]);
+
+  /* ── Ejercicio archivo: lista de ejercicios a resolver ── */
+  const [ejerciciosList, setEjerciciosList] = useState<string[]>([""]);
 
   /* ── Submit ── */
   const [submitting, setSubmitting] = useState(false);
   const [banner, setBanner] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
-
-  /* ── Derived ── */
-  const currentType = activityTypes.find((t) => t.id_type_activity === typeId);
-  const typeName    = (currentType?.name ?? "").toLowerCase();
 
   /* ── Helpers ── */
   const uploadFile = async (file: File, fileType: string): Promise<string> => {
@@ -413,29 +467,37 @@ export default function ActivityCreatorForm({
 
   const reset = () => {
     setTitle(""); setDescription(""); setSubjectId(""); setInstruction(""); setEstimatedMinutes(20);
-    setPresentacionUrl(null); setArchivoUrl(null); setVideoUrlText(""); setVideoMode("url");
-    setSolucionUrl(null); setEnunciado(""); setDibujoUrl(null);
+    setTipoEval("quiz"); setPresentacionUrl(null);
     setPreguntas([{ texto: "", opciones: ["", "", "", ""], correcta: 0 }]);
     setPares([{ a: "", b: "" }]);
     setOraciones([{ texto: "", respuesta: "" }]);
+    setPuntosClave([""]);
+    setEjerciciosList([""]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!subjectId) { setBanner({ type: "err", msg: "Selecciona una materia" }); return; }
 
+    // Encontrar el id_type_activity correspondiente en la BD
+    const dbTypeName  = TIPO_EVAL_TO_DB[tipoEval];
+    const matchedType = activityTypes.find((t) =>
+      t.name.toLowerCase().includes(dbTypeName)
+    );
+    const computedTypeId = matchedType?.id_type_activity ?? activityTypes[0]?.id_type_activity ?? "";
+
+    // Construir content
     const content: Record<string, unknown> = {
-      tipo:            typeName,
-      instruccion:     instruction,
+      tipo_evaluacion:  tipoEval,
+      instruccion:      instruction,
       presentacion_url: presentacionUrl,
     };
 
-    if (typeName === "quiz")    content.preguntas = preguntas;
-    if (typeName === "video")   { content.video_url = videoMode === "url" ? videoUrlText : archivoUrl; content.video_tipo = videoMode; }
-    if (typeName === "ejercicio") { content.enunciado = enunciado; content.solucion_url = solucionUrl; }
-    if (typeName === "dibujo")  content.dibujo_url = dibujoUrl;
-    if (typeName === "memoria" || typeName === "asociar" || typeName === "arrastrar") content.pares = pares;
-    if (typeName === "completar") content.oraciones = oraciones;
+    if (tipoEval === "quiz")              content.preguntas    = preguntas;
+    if (tipoEval === "emparejar")         content.pares        = pares;
+    if (tipoEval === "completar")         content.oraciones    = oraciones;
+    if (tipoEval === "video_upload")      content.puntos_clave = puntosClave.filter((p) => p.trim());
+    if (tipoEval === "ejercicio_archivo") content.ejercicios   = ejerciciosList.filter((e) => e.trim());
 
     setSubmitting(true); setBanner(null);
     try {
@@ -444,7 +506,7 @@ export default function ActivityCreatorForm({
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           id_subject:         subjectId,
-          id_type_activity:   typeId,
+          id_type_activity:   computedTypeId,
           title,
           description:        description || null,
           difficulty_level:   difficulty,
@@ -539,19 +601,21 @@ export default function ActivityCreatorForm({
           </select>
         </Field>
 
-        {/* Tipo de actividad */}
-        <Field label="Tipo de actividad" required>
+        {/* ══ Tipo de actividad evaluativa ══ */}
+        <Field label="¿Qué hace el estudiante?" required>
           <div className="grid grid-cols-4 gap-1.5">
-            {activityTypes.map((t) => {
-              const sel = t.id_type_activity === typeId;
+            {TIPO_EVAL_OPTIONS.map((opt) => {
+              const sel = tipoEval === opt.value;
               return (
-                <button key={t.id_type_activity} type="button"
-                  onClick={() => setTypeId(t.id_type_activity)}
-                  className="py-2 rounded-xl text-xs font-bold transition-all"
+                <button key={opt.value} type="button"
+                  onClick={() => setTipoEval(opt.value)}
+                  className="flex flex-col items-center py-2.5 px-1 rounded-xl transition-all gap-0.5"
                   style={sel
                     ? { background: "#E1EFFF", border: "1.5px solid #7FB3D5", color: "#4587a9" }
                     : { background: "#f8f9fa", border: "1.5px solid transparent", color: "#7f8c8d" }}>
-                  {t.name}
+                  <span className="text-lg leading-none">{opt.emoji}</span>
+                  <span className="text-[10px] font-bold leading-tight text-center">{opt.label}</span>
+                  <span className="text-[9px] leading-tight text-center opacity-70">{opt.desc}</span>
                 </button>
               );
             })}
@@ -591,118 +655,35 @@ export default function ActivityCreatorForm({
             onFocus={focusBorder} onBlur={blurBorder} />
         </Field>
 
-        {/* ══ Presentación (todas) ══ */}
+        {/* ══ Presentación (PPTX / PDF / imagen) ══ */}
         <Section label="Presentación del tema">
           <FileUploadBtn
-            label="PDF o imagen que el estudiante verá antes de la actividad"
-            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            label="PPTX, PDF o imagen que el estudiante verá antes de la actividad"
+            accept=".pptx,.ppt,.pdf,.jpg,.jpeg,.png,.webp"
             uploading={presentacionUploading}
             url={presentacionUrl}
             onUpload={(f) => handleUpload(f, "presentacion", setPresentacionUploading, setPresentacionUrl)}
             onClear={() => setPresentacionUrl(null)}
           />
+          {presentacionUrl && (
+            <p className="text-[11px] flex items-center gap-1.5 font-semibold" style={{ color: "#7FB3D5" }}>
+              <span>💡</span> Los archivos .pptx se mostrarán tal como están usando el visor de Office
+            </p>
+          )}
         </Section>
 
-        {/* ══ LECTURA → RESUMEN ══ */}
-        {typeName === "lectura" && (
-          <Section label="Tarea de resumen">
-            <div className="flex items-start gap-3 px-4 py-3 rounded-xl"
-              style={{ background: "#FDF8F2", border: "1.5px solid #FFB37B" }}>
-              <span className="text-xl flex-shrink-0">📝</span>
-              <p className="text-xs font-semibold leading-relaxed" style={{ color: "#7f8c8d" }}>
-                El estudiante leerá la <strong style={{ color: "#34495E" }}>presentación del tema</strong> y luego deberá escribir y subir un resumen con sus propias palabras.
-              </p>
-            </div>
-          </Section>
-        )}
-
-        {/* ══ VIDEO ══ */}
-        {typeName === "video" && (
-          <Section label="Video de la actividad">
-            <div className="grid grid-cols-2 gap-2">
-              {(["url", "archivo"] as const).map((m) => (
-                <button key={m} type="button"
-                  onClick={() => { setVideoMode(m); setArchivoUrl(null); setVideoUrlText(""); }}
-                  className="py-2 rounded-xl text-xs font-bold transition-all"
-                  style={videoMode === m
-                    ? { background: "#E1EFFF", border: "1.5px solid #7FB3D5", color: "#4587a9" }
-                    : { background: "#f8f9fa", border: "1.5px solid #D5DBDB", color: "#7f8c8d" }}>
-                  {m === "url" ? "URL (YouTube / web)" : "Subir archivo"}
-                </button>
-              ))}
-            </div>
-            {videoMode === "url" ? (
-              <input type="url" placeholder="https://youtube.com/watch?v=…"
-                value={videoUrlText} onChange={(e) => setVideoUrlText(e.target.value)}
-                style={inputBase} onFocus={focusBorder} onBlur={blurBorder} />
-            ) : (
-              <FileUploadBtn
-                label="Video (MP4, WebM — máx. 50 MB)"
-                accept=".mp4,.webm"
-                uploading={archivoUploading}
-                url={archivoUrl}
-                onUpload={(f) => handleUpload(f, "contenido", setArchivoUploading, setArchivoUrl)}
-                onClear={() => setArchivoUrl(null)}
-              />
-            )}
-            <div className="flex items-start gap-3 px-4 py-3 rounded-xl"
-              style={{ background: "#FDF8F2", border: "1.5px solid #FFB37B" }}>
-              <span className="text-xl flex-shrink-0">🎬</span>
-              <p className="text-xs font-semibold leading-relaxed" style={{ color: "#7f8c8d" }}>
-                El estudiante verá el video y luego deberá <strong style={{ color: "#34495E" }}>grabar y subir su propio video</strong> de respuesta o explicación.
-              </p>
-            </div>
-          </Section>
-        )}
-
-        {/* ══ EJERCICIO ══ */}
-        {typeName === "ejercicio" && (
-          <Section label="Ejercicio">
-            <Field label="Enunciado del ejercicio" required>
-              <textarea required rows={4}
-                placeholder="Describe el ejercicio que debe resolver el estudiante…"
-                value={enunciado} onChange={(e) => setEnunciado(e.target.value)}
-                style={{ ...inputBase, resize: "vertical" }}
-                onFocus={focusBorder} onBlur={blurBorder} />
-            </Field>
-            <FileUploadBtn
-              label="Solución del ejercicio (PDF o imagen — visible solo para el docente)"
-              accept=".pdf,.jpg,.jpeg,.png"
-              uploading={solucionUploading}
-              url={solucionUrl}
-              onUpload={(f) => handleUpload(f, "solucion", setSolucionUploading, setSolucionUrl)}
-              onClear={() => setSolucionUrl(null)}
-            />
-          </Section>
-        )}
-
         {/* ══ QUIZ ══ */}
-        {typeName === "quiz" && (
+        {tipoEval === "quiz" && (
           <Section label="Preguntas del Quiz — estilo Kahoot">
             <QuizBuilder preguntas={preguntas} onChange={setPreguntas} />
           </Section>
         )}
 
-        {/* ══ MEMORIA ══ */}
-        {typeName === "memoria" && (
-          <Section label="Tarjetas de Memoria">
+        {/* ══ EMPAREJAR ══ */}
+        {tipoEval === "emparejar" && (
+          <Section label="Pares para emparejar">
             <p className="text-xs" style={{ color: "#a0aec0" }}>
-              El estudiante debe encontrar los pares de cartas que coinciden.
-            </p>
-            <ParesList
-              pares={pares} labelA="Carta A" labelB="Carta B"
-              onAdd={() => setPares([...pares, { a: "", b: "" }])}
-              onUpdate={updatePar}
-              onRemove={(i) => setPares(pares.filter((_, idx) => idx !== i))}
-            />
-          </Section>
-        )}
-
-        {/* ══ ASOCIAR ══ */}
-        {typeName === "asociar" && (
-          <Section label="Pares para Asociar">
-            <p className="text-xs" style={{ color: "#a0aec0" }}>
-              El estudiante debe unir cada concepto con su par correspondiente.
+              El estudiante unirá cada concepto (izquierda) con su par correcto (derecha).
             </p>
             <ParesList
               pares={pares} labelA="Concepto" labelB="Definición / Par"
@@ -713,23 +694,8 @@ export default function ActivityCreatorForm({
           </Section>
         )}
 
-        {/* ══ ARRASTRAR ══ */}
-        {typeName === "arrastrar" && (
-          <Section label="Elementos para arrastrar">
-            <p className="text-xs" style={{ color: "#a0aec0" }}>
-              Define cada elemento y la categoría o destino correcto al que el estudiante debe arrastrarlo.
-            </p>
-            <ParesList
-              pares={pares} labelA="Elemento (lo que arrastra)" labelB="Destino / Categoría"
-              onAdd={() => setPares([...pares, { a: "", b: "" }])}
-              onUpdate={updatePar}
-              onRemove={(i) => setPares(pares.filter((_, idx) => idx !== i))}
-            />
-          </Section>
-        )}
-
         {/* ══ COMPLETAR ══ */}
-        {typeName === "completar" && (
+        {tipoEval === "completar" && (
           <Section label="Oraciones para completar">
             <p className="text-xs" style={{ color: "#a0aec0" }}>
               Escribe cada oración usando <span className="font-bold" style={{ color: "#34495E" }}>___</span> donde va el espacio en blanco, y especifica la respuesta correcta.
@@ -738,35 +704,71 @@ export default function ActivityCreatorForm({
           </Section>
         )}
 
-        {/* ══ DIBUJO PARA COLOREAR ══ */}
-        {typeName === "dibujo" && (
-          <Section label="Imagen para colorear">
-            <FileUploadBtn
-              label="Sube la imagen que el estudiante va a imprimir y colorear (JPG, PNG)"
-              accept=".jpg,.jpeg,.png,.webp"
-              uploading={dibujoUploading}
-              url={dibujoUrl}
-              onUpload={(f) => handleUpload(f, "dibujo", setDibujoUploading, setDibujoUrl)}
-              onClear={() => setDibujoUrl(null)}
-            />
+        {/* ══ DIBUJAR ══ */}
+        {tipoEval === "dibujo" && (
+          <Section label="Actividad de dibujo libre">
             <div className="flex items-start gap-3 px-4 py-3 rounded-xl"
               style={{ background: "#FDF8F2", border: "1.5px solid #FFB37B" }}>
-              <span className="text-xl flex-shrink-0">🖨️</span>
+              <span className="text-xl flex-shrink-0">🎨</span>
               <p className="text-xs font-semibold leading-relaxed" style={{ color: "#7f8c8d" }}>
-                El estudiante verá esta imagen, la imprimirá, la coloreará y luego tomará una foto para <strong style={{ color: "#34495E" }}>subirla como entrega</strong>.
+                El estudiante verá la presentación del tema y luego tendrá un <strong style={{ color: "#34495E" }}>canvas interactivo</strong> para dibujar libremente con colores y pinceles.
               </p>
             </div>
           </Section>
         )}
 
-        {/* ══ JUEGO ══ */}
-        {typeName === "juego" && (
-          <Section label="Juego Interactivo">
+        {/* ══ VIDEO UPLOAD ══ */}
+        {tipoEval === "video_upload" && (
+          <Section label="Puntos que el estudiante debe cubrir en su video">
+            <p className="text-xs" style={{ color: "#a0aec0" }}>
+              Opcional: indica los puntos clave que el estudiante debe mencionar en su video.
+            </p>
+            <SimpleList
+              items={puntosClave}
+              placeholder="Ej: Explica las causas del evento…"
+              singularLabel="punto clave"
+              onChange={setPuntosClave}
+            />
             <div className="flex items-start gap-3 px-4 py-3 rounded-xl"
-              style={{ background: "#f8f9fa", border: "1.5px solid #D5DBDB" }}>
-              <span className="text-2xl flex-shrink-0">🎮</span>
+              style={{ background: "#FDF8F2", border: "1.5px solid #FFB37B" }}>
+              <span className="text-xl flex-shrink-0">🎬</span>
               <p className="text-xs font-semibold leading-relaxed" style={{ color: "#7f8c8d" }}>
-                El estudiante verá la presentación del tema y luego participará en la actividad de juego interactivo configurada para esta lección.
+                El estudiante verá la presentación y luego deberá <strong style={{ color: "#34495E" }}>grabar y subir un video</strong> con su respuesta o explicación.
+              </p>
+            </div>
+          </Section>
+        )}
+
+        {/* ══ EJERCICIO ARCHIVO ══ */}
+        {tipoEval === "ejercicio_archivo" && (
+          <Section label="Ejercicios a resolver">
+            <p className="text-xs" style={{ color: "#a0aec0" }}>
+              Escribe cada ejercicio que el estudiante debe resolver en su cuaderno o hoja.
+            </p>
+            <SimpleList
+              items={ejerciciosList}
+              placeholder="Ej: Resuelve 3x + 5 = 14…"
+              singularLabel="ejercicio"
+              onChange={setEjerciciosList}
+            />
+            <div className="flex items-start gap-3 px-4 py-3 rounded-xl"
+              style={{ background: "#FDF8F2", border: "1.5px solid #FFB37B" }}>
+              <span className="text-xl flex-shrink-0">📤</span>
+              <p className="text-xs font-semibold leading-relaxed" style={{ color: "#7f8c8d" }}>
+                El estudiante resolverá los ejercicios en papel y luego <strong style={{ color: "#34495E" }}>subirá una foto o PDF</strong> con sus respuestas.
+              </p>
+            </div>
+          </Section>
+        )}
+
+        {/* ══ LECTURA ══ */}
+        {tipoEval === "lectura" && (
+          <Section label="Tarea de lectura y resumen">
+            <div className="flex items-start gap-3 px-4 py-3 rounded-xl"
+              style={{ background: "#FDF8F2", border: "1.5px solid #FFB37B" }}>
+              <span className="text-xl flex-shrink-0">📝</span>
+              <p className="text-xs font-semibold leading-relaxed" style={{ color: "#7f8c8d" }}>
+                El estudiante leerá la <strong style={{ color: "#34495E" }}>presentación del tema</strong> y luego deberá escribir y subir un resumen con sus propias palabras.
               </p>
             </div>
           </Section>

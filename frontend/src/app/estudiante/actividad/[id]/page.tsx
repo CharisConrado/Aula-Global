@@ -213,14 +213,15 @@ export default function ActividadPage() {
   // ─────────────────────────────────────────────────────────────────────────
   if (!_hasHydrated || loading || !activity) return <LoadingScreen />;
 
-  const slides    = (activity.content?.slides as SlideData[]) || [];
-  const hasSlides = slides.length > 0;
-  const kind      = getKind(activity);
-  const questions = (activity.content?.preguntas as QuizQuestion[]) || [];
-  const meta      = KIND_META[kind] || KIND_META.generico;
+  const slides       = (activity.content?.slides as SlideData[]) || [];
+  const pptxUrl      = (activity.content?.presentacion_url as string) || undefined;
+  const hasPresentation = slides.length > 0 || !!pptxUrl;
+  const kind         = getKind(activity);
+  const questions    = (activity.content?.preguntas as QuizQuestion[]) || [];
+  const meta         = KIND_META[kind] || KIND_META.generico;
 
   // Past the presentation step?
-  const pastPresentation = !showPresentation || !hasSlides;
+  const pastPresentation = !showPresentation || !hasPresentation;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -253,7 +254,7 @@ export default function ActividadPage() {
           {/* Presentation step badge */}
           {!pastPresentation && (
             <span className="text-xs font-bold text-purple-600 bg-purple-50 px-3 py-1 rounded-full flex-shrink-0">
-              📊 {slides.length} diap.
+              {pptxUrl ? "📊 Presentación" : `📊 ${slides.length} diap.`}
             </span>
           )}
 
@@ -286,9 +287,10 @@ export default function ActividadPage() {
             STEP 1 — PRESENTATION (slides extracted from PPTX)
             All subjects show slides first, then the evaluative activity.
         ══════════════════════════════════════════════════════════════════ */}
-        {showPresentation && !completed && hasSlides && (
+        {showPresentation && !completed && hasPresentation && (
           <PresentationViewer
             slides={slides}
+            pptxUrl={pptxUrl}
             title={activity.title}
             onContinue={() => setShowPresentation(false)}
           />

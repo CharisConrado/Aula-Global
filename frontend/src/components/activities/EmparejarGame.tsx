@@ -34,7 +34,7 @@ export default function EmparejarGame({ pares, onComplete }: EmparejarGameProps)
   const [allDone,    setAllDone]    = useState(false);
 
   const isMatchedA = (a: string) => matched.has(a);
-  const isMatchedB = (b: string) => [...matched.values()].includes(b);
+  const isMatchedB = (b: string) => Array.from(matched.values()).includes(b);
 
   const handleClickA = useCallback((a: string) => {
     if (isMatchedA(a) || allDone) return;

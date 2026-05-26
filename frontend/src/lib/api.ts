@@ -575,6 +575,7 @@ export interface ActivityResponse {
   id_activity: string;
   id_subject: string;
   id_type_activity: string;
+  activity_type?: string;             // type name from joined query (optional)
   title: string;
   description: string | null;
   difficulty_level: string;           // 'facil' | 'medio' | 'dificil'
