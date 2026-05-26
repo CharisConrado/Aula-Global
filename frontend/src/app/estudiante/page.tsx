@@ -25,16 +25,39 @@ interface SubjectProgress {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   PALETA
+   PALETAS POR MODO DE CONTRASTE
 ══════════════════════════════════════════════════════════════ */
+
+// Normal — gradientes pastel amigables
 const SUBJECT_PALETTE = [
-  { bg: "linear-gradient(145deg,#daedf7,#E1EFFF)", border: "rgba(127,179,213,0.45)", icon: "bg", accent: "#7FB3D5" },
-  { bg: "linear-gradient(145deg,#e2f6e1,#c5edc3)", border: "rgba(162,217,161,0.50)", icon: "bg", accent: "#A2D9A1" },
-  { bg: "linear-gradient(145deg,#ffe8d4,#ffd1a9)", border: "rgba(255,179,123,0.45)", icon: "bg", accent: "#FFB37B" },
-  { bg: "linear-gradient(145deg,#fef9db,#fef0b3)", border: "rgba(249,231,159,0.60)", icon: "bg", accent: "#e6c200" },
-  { bg: "linear-gradient(145deg,#ede9fe,#ddd6fe)", border: "rgba(167,139,250,0.40)", icon: "bg", accent: "#8b5cf6" },
-  { bg: "linear-gradient(145deg,#fce7f3,#fbcfe8)", border: "rgba(244,114,182,0.35)", icon: "bg", accent: "#ec4899" },
+  { bg: "linear-gradient(145deg,#daedf7,#E1EFFF)", border: "rgba(127,179,213,0.45)", accent: "#7FB3D5",  textTitle: "#34495E", textSub: "#7f8c8d", shadow: "rgba(52,73,94,0.07)" },
+  { bg: "linear-gradient(145deg,#e2f6e1,#c5edc3)", border: "rgba(162,217,161,0.50)", accent: "#A2D9A1",  textTitle: "#34495E", textSub: "#7f8c8d", shadow: "rgba(52,73,94,0.07)" },
+  { bg: "linear-gradient(145deg,#ffe8d4,#ffd1a9)", border: "rgba(255,179,123,0.45)", accent: "#FFB37B",  textTitle: "#34495E", textSub: "#7f8c8d", shadow: "rgba(52,73,94,0.07)" },
+  { bg: "linear-gradient(145deg,#fef9db,#fef0b3)", border: "rgba(249,231,159,0.60)", accent: "#c8a800",  textTitle: "#34495E", textSub: "#7f8c8d", shadow: "rgba(52,73,94,0.07)" },
+  { bg: "linear-gradient(145deg,#ede9fe,#ddd6fe)", border: "rgba(167,139,250,0.40)", accent: "#8b5cf6",  textTitle: "#34495E", textSub: "#7f8c8d", shadow: "rgba(52,73,94,0.07)" },
+  { bg: "linear-gradient(145deg,#fce7f3,#fbcfe8)", border: "rgba(244,114,182,0.35)", accent: "#ec4899",  textTitle: "#34495E", textSub: "#7f8c8d", shadow: "rgba(52,73,94,0.07)" },
 ];
+
+// Alto contraste — fondos oscuros profundos + acentos vivos (amigable para niños)
+const HC_SUBJECT_PALETTE = [
+  { bg: "linear-gradient(145deg,#0D1E3D,#0F3460)", border: "rgba(94,190,255,0.60)",  accent: "#5EBEFF",  textTitle: "#FFFFFF", textSub: "#93C5FD", shadow: "rgba(94,190,255,0.18)" },
+  { bg: "linear-gradient(145deg,#0A2818,#0F3D22)", border: "rgba(110,231,183,0.60)", accent: "#6EE7B7",  textTitle: "#FFFFFF", textSub: "#A7F3D0", shadow: "rgba(110,231,183,0.18)" },
+  { bg: "linear-gradient(145deg,#2B1400,#3D2000)", border: "rgba(251,191,36,0.60)",  accent: "#FBBF24",  textTitle: "#FFFFFF", textSub: "#FDE68A", shadow: "rgba(251,191,36,0.18)" },
+  { bg: "linear-gradient(145deg,#160D36,#2A1A6E)", border: "rgba(167,139,250,0.60)", accent: "#A78BFA",  textTitle: "#FFFFFF", textSub: "#DDD6FE", shadow: "rgba(167,139,250,0.18)" },
+  { bg: "linear-gradient(145deg,#26102A,#3D1645)", border: "rgba(240,171,252,0.60)", accent: "#F0ABFC",  textTitle: "#FFFFFF", textSub: "#F5D0FE", shadow: "rgba(240,171,252,0.18)" },
+  { bg: "linear-gradient(145deg,#09282D,#0F3A42)", border: "rgba(45,212,191,0.60)",  accent: "#2DD4BF",  textTitle: "#FFFFFF", textSub: "#99F6E4", shadow: "rgba(45,212,191,0.18)" },
+];
+
+// Bajo contraste — tonos crema ultra-suaves, sin estímulo
+const LC_SUBJECT_PALETTE = [
+  { bg: "linear-gradient(145deg,#EFF7FC,#E6F2FB)", border: "rgba(180,210,230,0.40)", accent: "#9ABDD0",  textTitle: "#6B7280", textSub: "#9CA3AF", shadow: "rgba(180,160,130,0.06)" },
+  { bg: "linear-gradient(145deg,#EEF6ED,#E4F2E3)", border: "rgba(160,200,158,0.40)", accent: "#8BB08A",  textTitle: "#6B7280", textSub: "#9CA3AF", shadow: "rgba(180,160,130,0.06)" },
+  { bg: "linear-gradient(145deg,#FBF3EC,#F7EAE0)", border: "rgba(210,180,150,0.40)", accent: "#C09878",  textTitle: "#6B7280", textSub: "#9CA3AF", shadow: "rgba(180,160,130,0.06)" },
+  { bg: "linear-gradient(145deg,#F4F2FA,#EDE9F7)", border: "rgba(185,175,220,0.40)", accent: "#A898C8",  textTitle: "#6B7280", textSub: "#9CA3AF", shadow: "rgba(180,160,130,0.06)" },
+  { bg: "linear-gradient(145deg,#FAF0F6,#F5E6F2)", border: "rgba(205,165,190,0.40)", accent: "#C098B5",  textTitle: "#6B7280", textSub: "#9CA3AF", shadow: "rgba(180,160,130,0.06)" },
+  { bg: "linear-gradient(145deg,#EDF6F6,#E2EEEE)", border: "rgba(145,190,190,0.40)", accent: "#82AAAA",  textTitle: "#6B7280", textSub: "#9CA3AF", shadow: "rgba(180,160,130,0.06)" },
+];
+
 const SUBJECT_ICONS = ["📚", "🔢", "🌍", "🎨", "🔬", "🎵"];
 
 /* ══════════════════════════════════════════════════════════════
@@ -53,8 +76,11 @@ export default function EstudiantePage() {
   const [selected,   setSelected]   = useState<SubjectProgress | null>(null);
   const [loading,    setLoading]    = useState(true);
 
-  // Aplica el perfil sensorial del estudiante al documento (contraste, fuente, animaciones)
-  useSensoryProfile(token, active_student_id);
+  // Aplica el perfil sensorial y expone helpers de contraste
+  const { isHighContrast, isLowContrast } = useSensoryProfile(token, active_student_id);
+  const activePalette = isHighContrast ? HC_SUBJECT_PALETTE
+                      : isLowContrast  ? LC_SUBJECT_PALETTE
+                      : SUBJECT_PALETTE;
   // ids completadas en esta sesión (persiste mientras el estudiante navega)
   const [completedSet,  setCompletedSet]  = useState<Set<string>>(new Set());
   const [sidebarOpen,   setSidebarOpen]   = useState(false);
@@ -168,7 +194,8 @@ export default function EstudiantePage() {
      RENDER PRINCIPAL
   ══════════════════════════════════════════════════════════ */
   return (
-    <div className="flex min-h-screen student-shell" style={{ backgroundColor: "#FDF8F2" }}>
+    <div className="flex min-h-screen student-shell"
+      style={{ backgroundColor: isHighContrast ? "#0F172A" : isLowContrast ? "#FAF3E8" : "#FDF8F2" }}>
       <CalmingScreen />
 
       {/* Overlay móvil */}
@@ -182,9 +209,9 @@ export default function EstudiantePage() {
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
         style={{
           width: 230,
-          background: "white",
-          borderRight: "1.5px solid #D5DBDB",
-          boxShadow: "4px 0 20px rgba(127,179,213,0.10)",
+          background: isHighContrast ? "#111827" : isLowContrast ? "#FAF3E8" : "white",
+          borderRight: isHighContrast ? "1.5px solid #1F2937" : "1.5px solid #D5DBDB",
+          boxShadow: isHighContrast ? "4px 0 20px rgba(0,0,0,0.5)" : "4px 0 20px rgba(127,179,213,0.10)",
         }}
       >
         {/* Logo + brand */}
@@ -381,7 +408,7 @@ export default function EstudiantePage() {
                 {/* Grid de materias */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
                   {progresses.map((prog, index) => {
-                    const palette = SUBJECT_PALETTE[index % SUBJECT_PALETTE.length];
+                    const palette = activePalette[index % activePalette.length];
                     const done    = prog.activities.filter(a => completedSet.has(a.id_activity)).length;
                     const total   = prog.activities.length;
                     const pct     = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -399,38 +426,60 @@ export default function EstudiantePage() {
                         style={{
                           background: palette.bg,
                           border: `2px solid ${palette.border}`,
-                          boxShadow: "0 2px 12px rgba(52,73,94,0.07)",
+                          boxShadow: isHighContrast
+                            ? `0 0 22px ${palette.shadow}, 0 4px 20px rgba(0,0,0,0.45)`
+                            : `0 2px 12px ${palette.shadow}`,
                         }}
                       >
-                        {/* Emoji + nombre */}
+                        {/* Emoji en contenedor con acento (alto contraste) o directo */}
                         <div className="flex items-start justify-between mb-4">
-                          <span className="text-4xl">
-                            {prog.subject.icon || SUBJECT_ICONS[index % SUBJECT_ICONS.length]}
-                          </span>
+                          {isHighContrast ? (
+                            <div className="w-13 h-13 rounded-2xl flex items-center justify-center text-3xl"
+                              style={{
+                                background: `${palette.accent}22`,
+                                border: `2px solid ${palette.accent}55`,
+                                width: 52, height: 52,
+                              }}>
+                              {prog.subject.icon || SUBJECT_ICONS[index % SUBJECT_ICONS.length]}
+                            </div>
+                          ) : (
+                            <span className="text-4xl">
+                              {prog.subject.icon || SUBJECT_ICONS[index % SUBJECT_ICONS.length]}
+                            </span>
+                          )}
                           {done === total && total > 0 && (
                             <span className="text-xl">🏆</span>
                           )}
                         </div>
-                        <h3 className="text-base font-extrabold mb-1" style={{ color: "#34495E" }}>
+
+                        <h3 className="text-base font-extrabold mb-1"
+                          style={{ color: palette.textTitle }}>
                           {prog.subject.subject_name}
                         </h3>
                         {prog.subject.description && (
-                          <p className="text-xs mb-3" style={{ color: "#7f8c8d" }}>{prog.subject.description}</p>
+                          <p className="text-xs mb-3" style={{ color: palette.textSub }}>
+                            {prog.subject.description}
+                          </p>
                         )}
 
                         {/* Barra de progreso */}
                         <div className="mt-3">
-                          <div className="flex justify-between text-xs mb-1" style={{ color: "#7f8c8d" }}>
+                          <div className="flex justify-between text-xs mb-1"
+                            style={{ color: palette.textSub }}>
                             <span>{done} de {total} actividades</span>
                             <span className="font-bold" style={{ color: palette.accent }}>{pct}%</span>
                           </div>
-                          <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.6)" }}>
+                          <div className="h-2.5 rounded-full overflow-hidden"
+                            style={{ background: isHighContrast ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.6)" }}>
                             <motion.div
                               className="h-full rounded-full"
                               initial={{ width: 0 }}
                               animate={{ width: `${pct}%` }}
                               transition={{ duration: 0.8, delay: index * 0.07 }}
-                              style={{ background: palette.accent }}
+                              style={{
+                                background: palette.accent,
+                                boxShadow: isHighContrast ? `0 0 8px ${palette.accent}` : "none",
+                              }}
                             />
                           </div>
                         </div>
@@ -466,7 +515,7 @@ export default function EstudiantePage() {
                 {/* Resumen de progreso de la materia */}
                 {(() => {
                   const idx     = progresses.findIndex(p => p.subject.id_subject === selected.subject.id_subject);
-                  const palette = SUBJECT_PALETTE[idx % SUBJECT_PALETTE.length];
+                  const palette = activePalette[idx % activePalette.length];
                   const done    = selected.activities.filter(a => completedSet.has(a.id_activity)).length;
                   const total   = selected.activities.length;
                   const pct     = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -474,23 +523,44 @@ export default function EstudiantePage() {
                   return (
                     <div
                       className="rounded-2xl p-5 mb-8 flex items-center gap-5"
-                      style={{ background: palette.bg, border: `2px solid ${palette.border}` }}
+                      style={{
+                        background: palette.bg,
+                        border: `2px solid ${palette.border}`,
+                        boxShadow: isHighContrast
+                          ? `0 0 22px ${palette.shadow}, 0 4px 20px rgba(0,0,0,0.45)`
+                          : undefined,
+                      }}
                     >
-                      <span className="text-5xl flex-shrink-0">
-                        {selected.subject.icon || SUBJECT_ICONS[idx % SUBJECT_ICONS.length]}
-                      </span>
+                      {isHighContrast ? (
+                        <div className="flex-shrink-0 rounded-2xl flex items-center justify-center text-3xl"
+                          style={{
+                            width: 60, height: 60,
+                            background: `${palette.accent}22`,
+                            border: `2px solid ${palette.accent}55`,
+                          }}>
+                          {selected.subject.icon || SUBJECT_ICONS[idx % SUBJECT_ICONS.length]}
+                        </div>
+                      ) : (
+                        <span className="text-5xl flex-shrink-0">
+                          {selected.subject.icon || SUBJECT_ICONS[idx % SUBJECT_ICONS.length]}
+                        </span>
+                      )}
                       <div className="flex-1">
-                        <h2 className="text-lg font-extrabold mb-1" style={{ color: "#34495E" }}>
+                        <h2 className="text-lg font-extrabold mb-1" style={{ color: palette.textTitle }}>
                           {selected.subject.subject_name}
                         </h2>
                         <div className="flex items-center gap-3">
-                          <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.5)" }}>
+                          <div className="flex-1 h-3 rounded-full overflow-hidden"
+                            style={{ background: isHighContrast ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.5)" }}>
                             <motion.div
                               className="h-full rounded-full"
                               initial={{ width: 0 }}
                               animate={{ width: `${pct}%` }}
                               transition={{ duration: 0.6 }}
-                              style={{ background: palette.accent }}
+                              style={{
+                                background: palette.accent,
+                                boxShadow: isHighContrast ? `0 0 8px ${palette.accent}` : "none",
+                              }}
                             />
                           </div>
                           <span className="text-sm font-extrabold flex-shrink-0" style={{ color: palette.accent }}>
@@ -501,12 +571,12 @@ export default function EstudiantePage() {
                       {/* Stats rápidos */}
                       <div className="flex gap-3 flex-shrink-0">
                         <div className="text-center">
-                          <p className="text-xl font-black" style={{ color: "#A2D9A1" }}>{done}</p>
-                          <p className="text-[10px]" style={{ color: "#7f8c8d" }}>Hechas</p>
+                          <p className="text-xl font-black" style={{ color: isHighContrast ? "#6EE7B7" : "#A2D9A1" }}>{done}</p>
+                          <p className="text-[10px]" style={{ color: palette.textSub }}>Hechas</p>
                         </div>
                         <div className="text-center">
-                          <p className="text-xl font-black" style={{ color: "#7f8c8d" }}>{total - done}</p>
-                          <p className="text-[10px]" style={{ color: "#7f8c8d" }}>Pendientes</p>
+                          <p className="text-xl font-black" style={{ color: palette.textSub }}>{total - done}</p>
+                          <p className="text-[10px]" style={{ color: palette.textSub }}>Pendientes</p>
                         </div>
                       </div>
                     </div>
@@ -582,31 +652,41 @@ export default function EstudiantePage() {
                             <div
                               className="flex-1 rounded-2xl p-5 transition-all"
                               style={{
-                                background: isDone ? "#f0fdf4" : canDo ? "white" : "#fafafa",
-                                border: isDone
-                                  ? "1.5px solid rgba(162,217,161,0.5)"
-                                  : canDo
-                                  ? "1.5px solid #D5DBDB"
-                                  : "1.5px solid #e5e7eb",
-                                boxShadow: canDo && !isDone ? "0 2px 12px rgba(127,179,213,0.10)" : "none",
-                                opacity: !canDo && !isDone ? 0.55 : 1,
+                                background: isHighContrast
+                                  ? isDone ? "#0A2818" : canDo ? "#1E293B" : "#111827"
+                                  : isDone ? "#f0fdf4" : canDo ? "white" : "#fafafa",
+                                border: isHighContrast
+                                  ? isDone ? "1.5px solid rgba(110,231,183,0.55)" : canDo ? "1.5px solid #334155" : "1.5px solid #1F2937"
+                                  : isDone ? "1.5px solid rgba(162,217,161,0.5)" : canDo ? "1.5px solid #D5DBDB" : "1.5px solid #e5e7eb",
+                                boxShadow: isHighContrast && canDo && !isDone
+                                  ? "0 2px 12px rgba(94,190,255,0.12)"
+                                  : canDo && !isDone ? "0 2px 12px rgba(127,179,213,0.10)" : "none",
+                                opacity: !canDo && !isDone ? 0.5 : 1,
                               }}
                             >
                               <div className="flex items-start justify-between gap-3 mb-2">
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2 flex-wrap mb-1">
-                                    <h3 className="text-sm font-extrabold" style={{ color: isDone ? "#16a34a" : "#34495E" }}>
+                                    <h3 className="text-sm font-extrabold"
+                                      style={{ color: isHighContrast
+                                        ? isDone ? "#6EE7B7" : "#FFFFFF"
+                                        : isDone ? "#16a34a" : "#34495E" }}>
                                       {activity.title}
                                     </h3>
                                     {isDone && (
                                       <span className="text-xs font-bold px-2 py-0.5 rounded-full"
-                                        style={{ background: "#dcfce7", color: "#16a34a" }}>
+                                        style={isHighContrast
+                                          ? { background: "rgba(110,231,183,0.18)", color: "#6EE7B7" }
+                                          : { background: "#dcfce7", color: "#16a34a" }}>
                                         ✓ Completada
                                       </span>
                                     )}
                                   </div>
                                   {activity.description && (
-                                    <p className="text-xs" style={{ color: "#7f8c8d" }}>{activity.description}</p>
+                                    <p className="text-xs"
+                                      style={{ color: isHighContrast ? "#94A3B8" : "#7f8c8d" }}>
+                                      {activity.description}
+                                    </p>
                                   )}
                                 </div>
                                 <span
@@ -619,14 +699,16 @@ export default function EstudiantePage() {
 
                               <div className="flex items-center justify-between mt-3">
                                 {activity.estimated_minutes ? (
-                                  <span className="flex items-center gap-1 text-xs" style={{ color: "#a0aec0" }}>
+                                  <span className="flex items-center gap-1 text-xs"
+                                    style={{ color: isHighContrast ? "#64748B" : "#a0aec0" }}>
                                     <Clock className="w-3 h-3" />
                                     {activity.estimated_minutes} min
                                   </span>
                                 ) : <span />}
 
                                 {isDone ? (
-                                  <div className="flex items-center gap-1.5 text-xs font-bold" style={{ color: "#A2D9A1" }}>
+                                  <div className="flex items-center gap-1.5 text-xs font-bold"
+                                    style={{ color: isHighContrast ? "#6EE7B7" : "#A2D9A1" }}>
                                     <CheckCircle2 className="w-4 h-4" />
                                     ¡Muy bien!
                                   </div>
@@ -639,15 +721,20 @@ export default function EstudiantePage() {
                                     }}
                                     className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-bold text-white"
                                     style={{
-                                      background: "linear-gradient(135deg,#FFB37B,#ff9450)",
-                                      boxShadow: "0 3px 12px rgba(255,148,80,0.40)",
+                                      background: isHighContrast
+                                        ? "linear-gradient(135deg,#1D4ED8,#2563EB)"
+                                        : "linear-gradient(135deg,#FFB37B,#ff9450)",
+                                      boxShadow: isHighContrast
+                                        ? "0 3px 14px rgba(37,99,235,0.5)"
+                                        : "0 3px 12px rgba(255,148,80,0.40)",
                                     }}
                                   >
                                     <Play className="w-3 h-3" />
                                     Empezar
                                   </motion.button>
                                 ) : (
-                                  <span className="text-xs font-medium" style={{ color: "#D5DBDB" }}>
+                                  <span className="text-xs font-medium"
+                                    style={{ color: isHighContrast ? "#374151" : "#D5DBDB" }}>
                                     🔒 Completa la anterior primero
                                   </span>
                                 )}
