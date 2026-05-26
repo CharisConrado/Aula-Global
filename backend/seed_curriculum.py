@@ -1,7 +1,15 @@
 """
 Aula Global — Seed Currículo Primaria
 Extrae contenido de 120 PPTXs, los sube a Supabase Storage
-y genera actividades evaluativas basadas en el contenido real.
+y genera actividades evaluativas por materia.
+
+Actividades por materia:
+  Arte              → Dibujo (canvas)
+  Ciencias Sociales → Subir video
+  Inglés            → Selección múltiple (quiz)
+  Lenguaje/Español  → Emparejar conceptos
+  Matemáticas       → Ejercicios + subir archivo
+  Ciencias Naturales→ Quiz
 
 Uso:
     cd backend
@@ -45,11 +53,17 @@ SUBJECT_KEY_MAP = {
     "matematicas":        ("Matemáticas",        "🔢", "#E53935"),
 }
 
-# 9 tipos de actividad que rotamos
-TYPES_ROTATION = [
-    "quiz", "ejercicio", "memoria", "asociar", "arrastrar",
-    "completar", "dibujo", "lectura", "video",
-]
+# ── Qué tipo de actividad usa cada materia ─────────────────────────────────────
+# tipo_evaluacion → lo que el frontend usa para saber qué UI mostrar
+# db_type_name    → nombre en la tabla type_activity de la DB
+SUBJECT_ACTIVITY = {
+    "arte":               {"tipo_eval": "dibujo",           "db_type": "dibujo"},
+    "ciencias-sociales":  {"tipo_eval": "video_upload",     "db_type": "video"},
+    "ingles":             {"tipo_eval": "quiz",              "db_type": "quiz"},
+    "lenguaje":           {"tipo_eval": "emparejar",        "db_type": "asociar"},
+    "matematicas":        {"tipo_eval": "ejercicio_archivo","db_type": "ejercicio"},
+    "ciencias-naturales": {"tipo_eval": "quiz",              "db_type": "quiz"},
+}
 
 DIFFICULTY_ROTATION = ["facil", "medio", "dificil"]
 
@@ -76,15 +90,10 @@ def parse_filename(name: str):
 
 # ── Extracción PPTX ───────────────────────────────────────────────────────────
 
-TITLE_PH_TYPES = {1, 3}   # PP_PLACEHOLDER.TITLE=1, CENTER_TITLE=3
+TITLE_PH_TYPES = {1, 3}  # PP_PLACEHOLDER.TITLE=1, CENTER_TITLE=3
 
 def extract_slides(pptx_path: Path):
-    """
-    Lee el PPTX y devuelve (slides_list, full_text).
-
-    slides_list: [{"num": int, "titulo": str, "puntos": [str]}]
-    full_text:   todo el texto concatenado (para generar actividades)
-    """
+    """Extrae el texto de cada diapositiva. Devuelve (slides_list, full_text)."""
     try:
         from pptx import Presentation
     except ImportError:
@@ -110,7 +119,6 @@ def extract_slides(pptx_path: Path):
             if not text:
                 continue
 
-            # ¿Es placeholder de título?
             is_title = False
             try:
                 ph = shape.placeholder_format
@@ -125,7 +133,7 @@ def extract_slides(pptx_path: Path):
                 for para in shape.text_frame.paragraphs:
                     line = para.text.strip()
                     if line and len(line) > 2:
-                        puntos.append(line[:220])  # cap longitud
+                        puntos.append(line[:220])
 
         if titulo or puntos:
             slides_data.append({
@@ -139,141 +147,194 @@ def extract_slides(pptx_path: Path):
 
     return slides_data, " | ".join(all_parts)
 
-# ── Generación de actividades ─────────────────────────────────────────────────
+# ── Generadores de contenido por materia ─────────────────────────────────────
 
-def _all_bullets(slides):
+def _bullets(slides):
     out = []
     for s in slides:
         out.extend(s["puntos"])
     return out
 
-def generate_content(type_name: str, title: str, slides: list) -> dict:
-    """
-    Genera contenido de actividad basado en el contenido real del PPTX.
-    """
-    bullets  = _all_bullets(slides)
-    titles   = [s["titulo"] for s in slides if s["titulo"]]
-    key_term = titles[0] if titles else title
+def _titles(slides):
+    return [s["titulo"] for s in slides if s["titulo"]]
 
-    # ── Quiz ──────────────────────────────────────────────────────────────────
-    if type_name == "quiz":
-        preguntas = []
-        for s in slides:
-            if not s["puntos"]:
-                continue
-            correct = s["puntos"][0]
-            # Distractores: bullets de otras diapositivas
-            pool = [b for b in bullets if b != correct]
-            random.shuffle(pool)
-            distractors = pool[:3]
-            while len(distractors) < 3:
-                distractors.append("No se menciona en la presentación")
 
-            opts = [correct] + distractors
-            random.shuffle(opts)
-            correct_idx = opts.index(correct)
-            topic = s["titulo"] or title
+def gen_arte(title, slides):
+    topic = _titles(slides)[0] if _titles(slides) else title
+    return {
+        "tipo_evaluacion": "dibujo",
+        "instruccion": (
+            f"🎨 Dibuja lo que aprendiste sobre '{topic}'. "
+            "Usa todos los colores que quieras y sé creativo."
+        ),
+    }
 
-            preguntas.append({
-                "pregunta":          f"¿Qué es correcto sobre '{topic}'?",
-                "opciones":          opts,
-                "respuesta_correcta": correct_idx,
-                "pista":             f"Revisa la diapositiva {s['num']}",
-            })
-            if len(preguntas) >= 5:
-                break
 
-        if not preguntas:
-            preguntas = [{
-                "pregunta":           f"¿De qué trata la presentación sobre {title}?",
-                "opciones":           [title, "Otro tema diferente", "Historia antigua", "Un cuento"],
-                "respuesta_correcta": 0,
-            }]
-        return {"preguntas": preguntas}
+def gen_sociales(title, slides):
+    key   = _titles(slides)[0] if _titles(slides) else title
+    puntos = _bullets(slides)[:3]
+    return {
+        "tipo_evaluacion": "video_upload",
+        "instruccion": (
+            f"Graba un video corto (1-2 minutos) explicando con tus propias palabras "
+            f"qué es '{key}' y por qué es importante para la sociedad."
+        ),
+        "puntos_clave": puntos,
+    }
 
-    # ── Ejercicio ─────────────────────────────────────────────────────────────
-    elif type_name == "ejercicio":
-        context = f"'{bullets[0]}'" if bullets else ""
-        enunciado = (
-            f"Según la presentación, explica con tus propias palabras:\n\n"
-            f"¿Qué aprendiste sobre {key_term}?"
-        )
-        if context:
-            enunciado += f"\n\nRecuerda lo que dice la presentación: {context}"
-        return {"enunciado": enunciado, "solucion_url": None}
 
-    # ── Memoria / Asociar ─────────────────────────────────────────────────────
-    elif type_name in ("memoria", "asociar"):
-        pares = []
-        for s in slides:
-            if s["titulo"] and s["puntos"]:
-                pares.append({"a": s["titulo"], "b": s["puntos"][0]})
-            if len(pares) >= 6:
-                break
-        if not pares:
-            pares = [
-                {"a": title,    "b": "Tema principal"},
-                {"a": key_term, "b": "Concepto clave"},
-            ]
-        return {"pares": pares}
+def gen_ingles(title, slides):
+    bullets  = _bullets(slides)
+    preguntas = []
 
-    # ── Arrastrar ─────────────────────────────────────────────────────────────
-    elif type_name == "arrastrar":
-        items = titles[:6] or bullets[:6] or [title]
-        return {
-            "elementos":  items,
-            "categorias": ["Lo que aprendí", "Quiero saber más"],
-        }
+    for s in slides:
+        if not s["puntos"]:
+            continue
+        correct = s["puntos"][0]
+        pool    = [b for b in bullets if b != correct]
+        random.shuffle(pool)
+        distractors = pool[:3]
+        while len(distractors) < 3:
+            distractors.append("None of the above")
 
-    # ── Completar ─────────────────────────────────────────────────────────────
-    elif type_name == "completar":
-        oraciones = []
-        for bullet in bullets:
-            words = bullet.split()
-            if len(words) >= 4:
-                blank = words[-1].rstrip(".,;:!¡¿?")
-                frase = " ".join(words[:-1]) + " _____."
-                oraciones.append({"texto": frase, "respuesta": blank})
-            if len(oraciones) >= 5:
-                break
-        if not oraciones:
-            oraciones = [{"texto": f"La presentación habla sobre _____.", "respuesta": title}]
-        return {"oraciones": oraciones}
+        opts = [correct] + distractors
+        random.shuffle(opts)
+        correct_idx = opts.index(correct)
+        topic = s["titulo"] or title
 
-    # ── Dibujo ────────────────────────────────────────────────────────────────
-    elif type_name == "dibujo":
-        topic = titles[0] if titles else title
-        instruccion = (
-            f"✏️ Dibuja lo que aprendiste sobre '{topic}' "
-            f"después de ver la presentación. ¡Usa todos los colores!"
-        )
-        return {"instruccion": instruccion, "dibujo_url": None}
+        preguntas.append({
+            "pregunta":           f"Which statement is correct about '{topic}'?",
+            "opciones":           opts,
+            "respuesta_correcta": correct_idx,
+            "pista":              f"Review slide {s['num']}",
+        })
+        if len(preguntas) >= 5:
+            break
 
-    # ── Lectura ───────────────────────────────────────────────────────────────
-    elif type_name == "lectura":
-        partes = []
-        for s in slides:
-            if s["titulo"]:
-                partes.append(f"📌 {s['titulo']}")
-            for p in s["puntos"]:
-                partes.append(f"   • {p}")
-        texto = "\n".join(partes) if partes else f"Tema: {title}"
-        return {
-            "texto":              texto,
-            "pregunta_reflexion": f"¿Cuál fue la idea más importante que aprendiste sobre {title}?",
-        }
+    if not preguntas:
+        preguntas = [{
+            "pregunta":           f"What is the main topic of this presentation?",
+            "opciones":           [title, "A different topic", "Ancient history", "A story"],
+            "respuesta_correcta": 0,
+        }]
 
-    # ── Video ─────────────────────────────────────────────────────────────────
-    elif type_name == "video":
-        busqueda = f"{title} para niños explicación educativa"
-        return {
-            "video_url":        None,
-            "video_tipo":       "buscar",
-            "busqueda_sugerida": busqueda,
-            "instruccion":      f"🎬 Busca un video sobre '{title}' y cuéntanos qué aprendiste.",
-        }
+    return {
+        "tipo_evaluacion": "quiz",
+        "preguntas":        preguntas,
+    }
 
-    return {}
+
+def gen_lenguaje(title, slides):
+    pares = []
+    for s in slides:
+        if s["titulo"] and s["puntos"]:
+            pares.append({"a": s["titulo"], "b": s["puntos"][0]})
+        if len(pares) >= 6:
+            break
+
+    if not pares:
+        bullets = _bullets(slides)
+        titles  = _titles(slides)
+        for i in range(min(len(titles), len(bullets), 4)):
+            pares.append({"a": titles[i], "b": bullets[i]})
+
+    if not pares:
+        pares = [
+            {"a": title,        "b": "Tema principal de la lección"},
+            {"a": "Definición", "b": f"Concepto clave de {title}"},
+        ]
+
+    return {
+        "tipo_evaluacion": "emparejar",
+        "pares":            pares,
+    }
+
+
+def gen_matematicas(title, slides):
+    bullets    = _bullets(slides)
+    ejercicios = []
+
+    for bullet in bullets:
+        ejercicios.append(bullet)
+        if len(ejercicios) >= 5:
+            break
+
+    # Si no hay suficientes bullets, genera ejercicios genéricos del tema
+    if len(ejercicios) < 3:
+        key = _titles(slides)[0] if _titles(slides) else title
+        ejercicios = [
+            f"Resuelve 3 problemas sobre {key} usando lo aprendido en la presentación.",
+            f"Explica con un ejemplo propio el concepto de {title}.",
+            f"Dibuja o escribe los pasos para resolver un ejercicio de {key}.",
+        ]
+
+    return {
+        "tipo_evaluacion": "ejercicio_archivo",
+        "ejercicios":       ejercicios[:5],
+        "instruccion": (
+            "Resuelve los ejercicios en tu cuaderno o en una hoja, "
+            "luego toma una foto o sube el archivo PDF con tus respuestas."
+        ),
+    }
+
+
+def gen_naturales(title, slides):
+    # Igual que inglés pero en español
+    bullets   = _bullets(slides)
+    preguntas = []
+
+    for s in slides:
+        if not s["puntos"]:
+            continue
+        correct = s["puntos"][0]
+        pool    = [b for b in bullets if b != correct]
+        random.shuffle(pool)
+        distractors = pool[:3]
+        while len(distractors) < 3:
+            distractors.append("No se menciona en la presentación")
+
+        opts = [correct] + distractors
+        random.shuffle(opts)
+
+        preguntas.append({
+            "pregunta":           f"¿Qué es correcto sobre '{s['titulo'] or title}'?",
+            "opciones":           opts,
+            "respuesta_correcta": opts.index(correct),
+            "pista":              f"Revisa la diapositiva {s['num']}",
+        })
+        if len(preguntas) >= 5:
+            break
+
+    if not preguntas:
+        preguntas = [{
+            "pregunta":           f"¿De qué trata esta presentación de Ciencias Naturales?",
+            "opciones":           [title, "Historia del mundo", "Arte y colores", "Geografía"],
+            "respuesta_correcta": 0,
+        }]
+
+    return {
+        "tipo_evaluacion": "quiz",
+        "preguntas":        preguntas,
+    }
+
+
+CONTENT_GENERATORS = {
+    "arte":               gen_arte,
+    "ciencias-sociales":  gen_sociales,
+    "ingles":             gen_ingles,
+    "lenguaje":           gen_lenguaje,
+    "matematicas":        gen_matematicas,
+    "ciencias-naturales": gen_naturales,
+}
+
+
+def generate_content(subject_key: str, title: str, slides: list, public_url: str) -> dict:
+    generator = CONTENT_GENERATORS.get(subject_key, gen_naturales)
+    content   = generator(title, slides)
+    # Siempre incluir slides y URL para el visor
+    content["slides"]           = slides
+    content["presentacion_url"] = public_url
+    return content
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -289,12 +350,14 @@ def main():
     try:
         from pptx import Presentation  # noqa: F401
     except ImportError:
-        print("Falta python-pptx. Instala con:  pip install python-pptx")
+        print("Falta python-pptx.  pip install python-pptx")
         sys.exit(1)
 
-    print("=" * 60)
-    print("  Aula Global — Seed Currículo Primaria (con extracción PPTX)")
-    print("=" * 60)
+    print("=" * 65)
+    print("  Aula Global — Seed Currículo Primaria")
+    print("  Arte→Dibujo | Sociales→Video | Inglés→Quiz")
+    print("  Lenguaje→Emparejar | Mates→Archivo | Naturales→Quiz")
+    print("=" * 65)
 
     # ── Supabase Storage ──────────────────────────────────────────────────────
     supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -312,25 +375,22 @@ def main():
     conn = psycopg2.connect(DATABASE_URL)
     cur  = conn.cursor()
 
-    # Grados
     cur.execute("SELECT id_degree, grade_name, level FROM degree ORDER BY level")
     rows = cur.fetchall()
     level_to_degree_id = {r[2]: str(r[0]) for r in rows}
-    print(f"\nGrados en DB: {[r[1] for r in rows]}")
+    print(f"\nGrados en DB : {[r[1] for r in rows]}")
 
     if not level_to_degree_id:
-        print("¡No hay grados en la DB! Crea los grados primero.")
+        print("¡No hay grados en la DB!")
         sys.exit(1)
 
-    # Tipos de actividad
     cur.execute("SELECT id_type_activity, LOWER(name) FROM type_activity")
     type_map = {r[1]: str(r[0]) for r in cur.fetchall()}
-    print(f"Tipos en DB : {list(type_map.keys())}")
+    print(f"Tipos en DB  : {list(type_map.keys())}")
 
     # ── Procesar grados ───────────────────────────────────────────────────────
     total_uploaded = 0
     total_created  = 0
-    type_idx       = 0
     diff_idx       = 0
 
     for grade_folder, grade_level in GRADE_FOLDER_TO_LEVEL.items():
@@ -344,18 +404,15 @@ def main():
             print(f"\n[!] Grado nivel {grade_level} no en DB")
             continue
 
-        print(f"\n── Grado {grade_level} {'─'*42}")
+        print(f"\n── Grado {grade_level} {'─'*45}")
 
-        # Materias ya existentes para este grado
         cur.execute(
             "SELECT id_subject, subject_name FROM subject WHERE id_degree = %s::uuid",
             (degree_id,)
         )
         subject_cache = {r[1]: str(r[0]) for r in cur.fetchall()}
 
-        pptx_files = sorted(grade_path.glob("*.pptx"))
-
-        for pptx_file in pptx_files:
+        for pptx_file in sorted(grade_path.glob("*.pptx")):
             subject_key, title = parse_filename(pptx_file.name)
 
             if subject_key not in SUBJECT_KEY_MAP:
@@ -378,10 +435,9 @@ def main():
             else:
                 subject_id = subject_cache[subject_name]
 
-            # ── Extraer contenido del PPTX ────────────────────────────────────
-            print(f"  → Extrayendo: {pptx_file.name}")
-            slides, full_text = extract_slides(pptx_file)
-            print(f"     {len(slides)} diapositivas con texto extraídas")
+            # ── Extraer slides del PPTX ───────────────────────────────────────
+            slides, _ = extract_slides(pptx_file)
+            print(f"  → {pptx_file.name}  [{len(slides)} diap.]")
 
             # ── Subir PPTX a Supabase Storage ─────────────────────────────────
             storage_path = f"{grade_folder}/{pptx_file.name}"
@@ -410,35 +466,31 @@ def main():
                     print(f"     • Ya en Storage")
                 else:
                     print(f"     [!] Error subiendo: {e}")
-                    # No hacemos continue — igual creamos la actividad
 
-            # ── Tipo y dificultad en rotación ─────────────────────────────────
-            type_name  = TYPES_ROTATION[type_idx % len(TYPES_ROTATION)]
-            difficulty = DIFFICULTY_ROTATION[diff_idx % len(DIFFICULTY_ROTATION)]
-            type_idx  += 1
-            diff_idx  += 1
+            # ── Tipo de actividad según materia ────────────────────────────────
+            subject_cfg = SUBJECT_ACTIVITY.get(subject_key, {"tipo_eval": "quiz", "db_type": "quiz"})
+            db_type_name = subject_cfg["db_type"]
 
-            # Buscar tipo en DB
-            type_id = type_map.get(type_name)
+            # Buscar el id del tipo en la DB (coincidencia parcial)
+            type_id = type_map.get(db_type_name)
             if not type_id:
                 for k, v in type_map.items():
-                    if type_name in k or k in type_name:
+                    if db_type_name in k or k in db_type_name:
                         type_id = v
                         break
             if not type_id:
-                print(f"     [!] Tipo '{type_name}' no en DB — omitiendo")
+                print(f"     [!] Tipo '{db_type_name}' no en DB — omitiendo")
                 continue
 
-            # ── Generar contenido basado en las diapositivas ──────────────────
-            activity_content = generate_content(type_name, title, slides)
+            # ── Generar contenido evaluativo por materia ───────────────────────
+            activity_content = generate_content(subject_key, title, slides, public_url)
+            content_str      = json.dumps(activity_content, ensure_ascii=False)
 
-            # Agregar slides extraídas y URL del PPTX al contenido
-            activity_content["slides"]           = slides
-            activity_content["presentacion_url"] = public_url
+            difficulty = DIFFICULTY_ROTATION[diff_idx % len(DIFFICULTY_ROTATION)]
+            diff_idx  += 1
 
-            content_str = json.dumps(activity_content, ensure_ascii=False)
-
-            # ── Crear actividad en la DB ──────────────────────────────────────
+            # ── Insertar actividad en la DB ────────────────────────────────────
+            tipo_eval = subject_cfg["tipo_eval"]
             try:
                 cur.execute("""
                     INSERT INTO activity
@@ -454,7 +506,7 @@ def main():
                 ))
                 conn.commit()
                 total_created += 1
-                print(f"     ✓ [{type_name}/{difficulty}] {title}")
+                print(f"     ✓ [{tipo_eval}/{difficulty}] {title}")
             except Exception as e:
                 conn.rollback()
                 print(f"     [!] Error creando actividad '{title}': {e}")
@@ -462,11 +514,12 @@ def main():
     cur.close()
     conn.close()
 
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 65)
     print(f"  ✓ Archivos subidos    : {total_uploaded}")
     print(f"  ✓ Actividades creadas : {total_created}")
-    print("=" * 60)
-    print("\n¡Listo! Ahora el estudiante verá las diapositivas antes de cada actividad.")
+    print("=" * 65)
+    print("\n  Arte→Dibujo ✏️  |  Sociales→Video 🎥  |  Inglés→Quiz 🧠")
+    print("  Lenguaje→Emparejar 🔗  |  Mates→Archivo 📁  |  Naturales→Quiz 🌿")
 
 if __name__ == "__main__":
     main()
