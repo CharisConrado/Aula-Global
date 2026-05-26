@@ -61,6 +61,14 @@ export default function EstudiantePage() {
   /* ── Carga inicial ── */
   const loadData = useCallback(async () => {
     if (!token || !active_student_id) return;
+
+    // Recuperar actividades completadas guardadas localmente
+    try {
+      const storageKey = `aula_completed_${active_student_id}`;
+      const stored = JSON.parse(localStorage.getItem(storageKey) || "[]") as string[];
+      if (stored.length > 0) setCompletedSet(new Set(stored));
+    } catch {}
+
     try {
       const stud = await api.getStudent(token, active_student_id);
       setStudent(stud);
@@ -109,9 +117,16 @@ export default function EstudiantePage() {
     loadData();
   }, [token, user, active_student_id, setActiveStudentId, router, loadData]);
 
-  /* ── Marcar actividad completada (solo visual/local) ── */
+  /* ── Marcar actividad completada ── */
   const markDone = (actId: string) => {
-    setCompletedSet(prev => new Set([...Array.from(prev), actId]));
+    setCompletedSet(prev => {
+      const next = new Set([...Array.from(prev), actId]);
+      try {
+        const storageKey = `aula_completed_${active_student_id}`;
+        localStorage.setItem(storageKey, JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
   };
 
   /* ── Cerrar sesión y volver ── */

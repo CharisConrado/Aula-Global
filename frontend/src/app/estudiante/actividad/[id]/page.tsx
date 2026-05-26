@@ -177,6 +177,18 @@ export default function ActividadPage() {
   const finishActivity = useCallback(async (nota: number) => {
     setScore(nota);
     setCompleted(true);
+
+    // Persiste en localStorage para que el dashboard la muestre como completada
+    if (active_student_id && activityId) {
+      try {
+        const storageKey = `aula_completed_${active_student_id}`;
+        const prev = JSON.parse(localStorage.getItem(storageKey) || "[]") as string[];
+        if (!prev.includes(activityId)) {
+          localStorage.setItem(storageKey, JSON.stringify([...prev, activityId]));
+        }
+      } catch {}
+    }
+
     if (!token || !activeSession || !activityRecordId) return;
     const tiempo = Math.round((Date.now() - startTimeRef.current) / 1000);
     try {
@@ -187,7 +199,7 @@ export default function ActividadPage() {
         achievement_level: nota >= 2 ? "completado" : "fallido",
       });
     } catch {}
-  }, [token, activeSession, activityRecordId]);
+  }, [token, activeSession, activityRecordId, active_student_id, activityId]);
 
   // ── Quiz answer handler ───────────────────────────────────────────────────
   const handleAnswer = (idx: number) => {
