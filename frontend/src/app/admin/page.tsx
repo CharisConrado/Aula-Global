@@ -28,6 +28,7 @@ import {
   Lock,
   BarChart3,
   Search,
+  Menu,
 } from "lucide-react";
 import Image from "next/image";
 import ReportsPanel from "@/components/admin/ReportsPanel";
@@ -300,7 +301,8 @@ export default function AdminPage() {
   const { token, user, logout } = useSessionStore();
 
   /* ── Nav state ── */
-  const [tab, setTab] = useState<NavTab>("reportes");
+  const [tab, setTab]               = useState<NavTab>("reportes");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   /* ── Datos comunes ── */
@@ -697,9 +699,18 @@ export default function AdminPage() {
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: "#FDF8F2" }}>
 
+      {/* Overlay móvil */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* ══════════════════ SIDEBAR ══════════════════ */}
       <aside
-        className="fixed top-0 left-0 h-full flex flex-col z-20"
+        className={`fixed top-0 left-0 h-full flex flex-col z-30 transition-transform duration-300
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
         style={{ width: 256, background: "white", borderRight: "1.5px solid #D5DBDB", boxShadow: "4px 0 24px rgba(127,179,213,0.10)" }}
       >
         <div className="flex items-center gap-3 px-5 py-6" style={{ borderBottom: "1.5px solid #D5DBDB" }}>
@@ -716,7 +727,7 @@ export default function AdminPage() {
             return (
               <button
                 key={item.id}
-                onClick={() => { setTab(item.id); setSearchQuery(""); setSelectedActivityDegree("todos"); setSelectedActivitySubject("todos"); }}
+                onClick={() => { setTab(item.id); setSearchQuery(""); setSelectedActivityDegree("todos"); setSelectedActivitySubject("todos"); setSidebarOpen(false); }}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-200"
                 style={active ? { background: "#E1EFFF", color: "#4587a9" } : { color: "#7f8c8d" }}
                 onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "#f8f9fa"; }}
@@ -756,15 +767,24 @@ export default function AdminPage() {
       </aside>
 
       {/* ══════════════════ MAIN CONTENT ══════════════════ */}
-      <div className="flex-1 flex flex-col" style={{ marginLeft: 256 }}>
+      <div className="flex-1 flex flex-col lg:ml-[256px]">
 
         {/* Header sticky */}
         <header
-          className="sticky top-0 z-10 flex items-center justify-between px-8 py-4"
+          className="sticky top-0 z-10 flex items-center justify-between px-4 md:px-8 py-4"
           style={{ background: "rgba(253,248,242,0.92)", backdropFilter: "blur(8px)", borderBottom: "1.5px solid #D5DBDB" }}
         >
-          <div>
-            <h1 className="text-xl font-extrabold" style={{ color: "#34495E" }}>
+          <div className="flex items-center gap-3">
+            {/* Hamburguesa — solo móvil */}
+            <button
+              className="lg:hidden p-2 rounded-xl transition-colors"
+              style={{ color: "#7f8c8d" }}
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div>
+            <h1 className="text-lg md:text-xl font-extrabold" style={{ color: "#34495E" }}>
               {tab === "reportes"      && "Reportes generales"}
               {tab === "actividades"   && "Gestionar Actividades"}
               {tab === "tutores"       && "Tutores"}
@@ -772,7 +792,7 @@ export default function AdminPage() {
               {tab === "estudiantes"   && "Estudiantes"}
               {tab === "admins"        && "Administradores"}
             </h1>
-            <p className="text-xs mt-0.5" style={{ color: "#a0aec0" }}>
+            <p className="text-xs mt-0.5 hidden sm:block" style={{ color: "#a0aec0" }}>
               {tab === "reportes"      && "Uso y comportamiento de la plataforma"}
               {tab === "actividades"   && `${activities.length} actividad${activities.length !== 1 ? "es" : ""} en el sistema`}
               {tab === "tutores"       && (tutorsLoaded ? `${tutors.length} tutor${tutors.length !== 1 ? "es" : ""} registrado${tutors.length !== 1 ? "s" : ""}` : "Cargando...")}
@@ -780,6 +800,7 @@ export default function AdminPage() {
               {tab === "estudiantes"   && (studentsLoaded ? `${students.length} estudiante${students.length !== 1 ? "s" : ""}` : "Cargando...")}
               {tab === "admins"        && "Crear y gestionar cuentas de administrador"}
             </p>
+            </div>
           </div>
 
           {/* Botón "Crear" en header para Tutores / Profesionales / Estudiantes */}
@@ -802,7 +823,7 @@ export default function AdminPage() {
         </header>
 
         {/* Content */}
-        <main className="flex-1 px-8 py-8">
+        <main className="flex-1 px-4 md:px-8 py-4 md:py-8">
           <AnimatePresence mode="wait">
 
             {/* ══════════════════ REPORTES ══════════════════ */}

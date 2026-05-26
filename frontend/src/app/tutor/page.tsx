@@ -26,6 +26,7 @@ import {
   Plus,
   Trash2,
   ChevronRight,
+  Menu,
 } from "lucide-react";
 
 /* ── ID compuesto del estudiante ────────────────────────────── */
@@ -94,6 +95,7 @@ export default function TutorPage() {
   const [wsConnections, setWsConnections] = useState<Record<string, TutorMonitoringWebSocket>>({});
   const [loading, setLoading]             = useState(true);
   const [tab, setTab]                     = useState<NavTab>("estudiantes");
+  const [sidebarOpen, setSidebarOpen]     = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const onlineTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -340,9 +342,15 @@ export default function TutorPage() {
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: "#FDF8F2" }}>
 
+      {/* Overlay móvil */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-20 bg-black/40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
       {/* ══════════════════ SIDEBAR ══════════════════ */}
       <aside
-        className="fixed top-0 left-0 h-full flex flex-col z-20"
+        className={`fixed top-0 left-0 h-full flex flex-col z-30 transition-transform duration-300
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
         style={{
           width: 256,
           background: "white",
@@ -367,7 +375,7 @@ export default function TutorPage() {
             return (
               <button
                 key={item.id}
-                onClick={() => setTab(item.id)}
+                onClick={() => { setTab(item.id); setSidebarOpen(false); }}
                 className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-2xl text-sm font-semibold transition-all duration-200 group"
                 style={
                   active
@@ -446,28 +454,33 @@ export default function TutorPage() {
       </aside>
 
       {/* ══════════════════ MAIN CONTENT ══════════════════ */}
-      <div className="flex-1 flex flex-col" style={{ marginLeft: 256 }}>
+      <div className="flex-1 flex flex-col lg:ml-[256px]">
 
         {/* Top bar */}
         <header
-          className="sticky top-0 z-10 flex items-center justify-between px-8 py-4"
+          className="sticky top-0 z-10 flex items-center justify-between px-4 md:px-8 py-4"
           style={{
             background: "rgba(253,248,242,0.92)",
             backdropFilter: "blur(8px)",
             borderBottom: "1.5px solid #D5DBDB",
           }}
         >
-          <div>
-            <h1 className="text-xl font-extrabold" style={{ color: "#34495E" }}>
+          <div className="flex items-center gap-3">
+            <button className="lg:hidden p-2 rounded-xl" style={{ color: "#7f8c8d" }} onClick={() => setSidebarOpen(true)}>
+              <Menu className="w-5 h-5" />
+            </button>
+            <div>
+            <h1 className="text-lg md:text-xl font-extrabold" style={{ color: "#34495E" }}>
               {tab === "estudiantes" && "Mis Estudiantes"}
               {tab === "crisis"      && "Crisis Activas"}
               {tab === "historial"   && "Historial de Sesiones"}
             </h1>
-            <p className="text-xs mt-0.5" style={{ color: "#a0aec0" }}>
+            <p className="text-xs mt-0.5 hidden sm:block" style={{ color: "#a0aec0" }}>
               {tab === "estudiantes" && `${students.length} estudiante${students.length !== 1 ? "s" : ""} registrado${students.length !== 1 ? "s" : ""}`}
               {tab === "crisis"      && `${activeCrisis.length} alerta${activeCrisis.length !== 1 ? "s" : ""} activa${activeCrisis.length !== 1 ? "s" : ""}`}
               {tab === "historial"   && "Accede al perfil para ver detalles"}
             </p>
+            </div>
           </div>
 
           {/* Crisis badge flotante */}
@@ -490,7 +503,7 @@ export default function TutorPage() {
         </header>
 
         {/* Content */}
-        <main className="flex-1 px-8 py-8">
+        <main className="flex-1 px-4 md:px-8 py-4 md:py-8">
           <AnimatePresence mode="wait">
 
             {/* ── Tab: Estudiantes ── */}

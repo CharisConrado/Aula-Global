@@ -168,7 +168,7 @@ export default function LoginPage() {
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-full max-w-2xl relative z-10"
+        className="w-full max-w-sm sm:max-w-2xl relative z-10"
       >
         {/* Logo + título */}
         <motion.div
@@ -193,8 +193,8 @@ export default function LoginPage() {
           </p>
         </motion.div>
 
-        {/* Tarjetas de selección de rol — fila de 4, alargadas */}
-        <div className="grid grid-cols-4 gap-3 mb-4">
+        {/* Tarjetas de selección de rol */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {ROLE_CARDS.map((card, i) => {
             const selected = tab === card.id;
             return (

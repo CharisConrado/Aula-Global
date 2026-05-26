@@ -13,7 +13,7 @@ import {
   type StudentResponse,
 } from "@/lib/api";
 import CalmingScreen from "@/components/ui/CalmingScreen";
-import { BookOpen, Star, LogOut, Play, CheckCircle2, Circle, ChevronRight, Trophy, Target, Clock } from "lucide-react";
+import { BookOpen, Star, LogOut, Play, CheckCircle2, Circle, ChevronRight, Trophy, Target, Clock, Menu } from "lucide-react";
 
 /* ══════════════════════════════════════════════════════════════
    TIPOS
@@ -55,7 +55,8 @@ export default function EstudiantePage() {
   // Aplica el perfil sensorial del estudiante al documento (contraste, fuente, animaciones)
   useSensoryProfile(token, active_student_id);
   // ids completadas en esta sesión (persiste mientras el estudiante navega)
-  const [completedSet, setCompletedSet] = useState<Set<string>>(new Set());
+  const [completedSet,  setCompletedSet]  = useState<Set<string>>(new Set());
+  const [sidebarOpen,   setSidebarOpen]   = useState(false);
 
   /* ── Carga inicial ── */
   const loadData = useCallback(async () => {
@@ -153,9 +154,15 @@ export default function EstudiantePage() {
     <div className="flex min-h-screen student-shell" style={{ backgroundColor: "#FDF8F2" }}>
       <CalmingScreen />
 
+      {/* Overlay móvil */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-20 bg-black/40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
       {/* ════════════ SIDEBAR IZQUIERDO ════════════ */}
       <aside
-        className="fixed top-0 left-0 h-full flex flex-col z-20"
+        className={`fixed top-0 left-0 h-full flex flex-col z-30 transition-transform duration-300
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
         style={{
           width: 230,
           background: "white",
@@ -240,7 +247,7 @@ export default function EstudiantePage() {
             return (
               <button
                 key={prog.subject.id_subject}
-                onClick={() => setSelected(prog)}
+                onClick={() => { setSelected(prog); setSidebarOpen(false); }}
                 className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-all"
                 style={active ? { background: "#E1EFFF" } : {}}
                 onMouseEnter={e => { if (!active) e.currentTarget.style.background = "#f8f9fa"; }}
@@ -284,22 +291,25 @@ export default function EstudiantePage() {
       </aside>
 
       {/* ════════════ CONTENIDO PRINCIPAL ════════════ */}
-      <div className="flex-1 flex flex-col" style={{ marginLeft: 230 }}>
+      <div className="flex-1 flex flex-col lg:ml-[230px]">
 
         {/* Top bar */}
         <header
-          className="sticky top-0 z-10 px-8 py-4 flex items-center justify-between"
+          className="sticky top-0 z-10 px-4 md:px-8 py-4 flex items-center justify-between"
           style={{
             background: "rgba(253,248,242,0.92)",
             backdropFilter: "blur(8px)",
             borderBottom: "1.5px solid #D5DBDB",
           }}
         >
-          <div>
-            <h1 className="text-lg font-extrabold" style={{ color: "#34495E" }}>
+          <div className="flex items-center gap-3">
+            <button className="lg:hidden p-2 rounded-xl" style={{ color: "#7f8c8d" }} onClick={() => setSidebarOpen(true)}>
+              <Menu className="w-5 h-5" />
+            </button>
+            <h1 className="text-base md:text-lg font-extrabold" style={{ color: "#34495E" }}>
               {selected ? selected.subject.subject_name : "¿Qué quieres aprender hoy? ✨"}
             </h1>
-            <p className="text-xs mt-0.5" style={{ color: "#a0aec0" }}>
+            <p className="text-xs mt-0.5 hidden sm:block" style={{ color: "#a0aec0" }}>
               {selected
                 ? `${selected.activities.filter(a => completedSet.has(a.id_activity)).length} de ${selected.activities.length} actividades completadas`
                 : `${progresses.length} materias · ${totalActivities} actividades en total`
@@ -321,7 +331,7 @@ export default function EstudiantePage() {
         </header>
 
         {/* Main */}
-        <main className="flex-1 px-8 py-8">
+        <main className="flex-1 px-4 md:px-8 py-4 md:py-8">
           <AnimatePresence mode="wait">
 
             {/* ══ VISTA: Todas las materias ══ */}
@@ -367,7 +377,7 @@ export default function EstudiantePage() {
                         transition={{ delay: index * 0.07 }}
                         whileHover={{ scale: 1.03, y: -4 }}
                         whileTap={{ scale: 0.97 }}
-                        onClick={() => setSelected(prog)}
+                        onClick={() => { setSelected(prog); setSidebarOpen(false); }}
                         className="rounded-[1.5rem] p-6 text-left"
                         style={{
                           background: palette.bg,
