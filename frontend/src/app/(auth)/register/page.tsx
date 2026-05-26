@@ -1,9 +1,7 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
@@ -24,11 +22,15 @@ function AulaGlobalLogo({ size = 72 }: { size?: number }) {
 }
 
 export default function RegisterPage() {
-  const router       = useRouter();
-  const searchParams = useSearchParams();
-  const { setAuth }  = useSessionStore();
+  const router      = useRouter();
+  const { setAuth } = useSessionStore();
 
-  const esProfesional = searchParams.get("rol") === "profesional";
+  const [esProfesional, setEsProfesional] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setEsProfesional(params.get("rol") === "profesional");
+  }, []);
 
   const [form, setForm] = useState({
     full_name:         "",
