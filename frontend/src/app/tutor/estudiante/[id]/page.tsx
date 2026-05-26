@@ -234,7 +234,7 @@ export default function TutorEstudiantePage() {
   const params = useParams();
   const studentId = params.id as string;
 
-  const { token, user, setActiveStudentId } = useSessionStore();
+  const { token, user, setActiveStudentId, _hasHydrated } = useSessionStore();
 
   const [student, setStudent]     = useState<StudentResponse | null>(null);
   const [profile, setProfile]     = useState<ProfileResponse | null>(null);
@@ -323,6 +323,7 @@ export default function TutorEstudiantePage() {
   }, [token, studentId, loadProfile, loadDiagnoses]);
 
   useEffect(() => {
+    if (!_hasHydrated) return;
     if (
       !token ||
       !user ||
@@ -332,7 +333,7 @@ export default function TutorEstudiantePage() {
       return;
     }
     loadData();
-  }, [token, user, router, loadData]);
+  }, [_hasHydrated, token, user, router, loadData]);
 
   // ── Profile save ──────────────────────────────────────────────────────────
 

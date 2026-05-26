@@ -298,7 +298,7 @@ function Modal({
 /* ════════════════════════════════════════════════════════════════ */
 export default function AdminPage() {
   const router = useRouter();
-  const { token, user, logout } = useSessionStore();
+  const { token, user, logout, _hasHydrated } = useSessionStore();
 
   /* ── Nav state ── */
   const [tab, setTab]               = useState<NavTab>("reportes");
@@ -390,12 +390,13 @@ export default function AdminPage() {
   }, [token]);
 
   useEffect(() => {
+    if (!_hasHydrated) return;
     if (!token || !user || user.rol !== "admin") {
       router.replace("/login");
       return;
     }
     loadInitial();
-  }, [token, user, router, loadInitial]);
+  }, [_hasHydrated, token, user, router, loadInitial]);
 
   /* ── Cargas lazy por tab ── */
   useEffect(() => {

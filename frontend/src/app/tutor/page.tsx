@@ -87,7 +87,7 @@ type NavTab = "estudiantes" | "crisis" | "historial";
 /* ════════════════════════════════════════════════════════════════ */
 export default function TutorPage() {
   const router = useRouter();
-  const { token, user, logout } = useSessionStore();
+  const { token, user, logout, _hasHydrated } = useSessionStore();
 
   const [students, setStudents]           = useState<StudentResponse[]>([]);
   const [activeCrisis, setActiveCrisis]   = useState<CrisisResponse[]>([]);
@@ -125,12 +125,13 @@ export default function TutorPage() {
   }, [token]);
 
   useEffect(() => {
+    if (!_hasHydrated) return;
     if (!token || !user || user.rol !== "tutor") {
       router.replace("/login");
       return;
     }
     loadData();
-  }, [token, user, router, loadData]);
+  }, [_hasHydrated, token, user, router, loadData]);
 
   /* ── fetchLiveSession ── */
   const fetchLiveSession = useCallback(async (studentId: string) => {

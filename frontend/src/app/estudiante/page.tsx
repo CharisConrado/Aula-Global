@@ -45,6 +45,7 @@ export default function EstudiantePage() {
   const {
     token, user, active_student_id,
     setActiveStudentId, activeSession, setActiveSession, logout,
+    _hasHydrated,
   } = useSessionStore();
 
   const [student,    setStudent]    = useState<StudentResponse | null>(null);
@@ -107,6 +108,7 @@ export default function EstudiantePage() {
   }, [token, active_student_id, activeSession, setActiveSession]);
 
   useEffect(() => {
+    if (!_hasHydrated) return;
     if (!token || !user) { router.replace("/login"); return; }
     if (user.rol === "estudiante" && !active_student_id) {
       setActiveStudentId(user.user_id); return;
@@ -115,7 +117,7 @@ export default function EstudiantePage() {
       router.replace(user.rol === "tutor" ? "/tutor" : "/admin"); return;
     }
     loadData();
-  }, [token, user, active_student_id, setActiveStudentId, router, loadData]);
+  }, [_hasHydrated, token, user, active_student_id, setActiveStudentId, router, loadData]);
 
   /* ── Marcar actividad completada ── */
   const markDone = (actId: string) => {
