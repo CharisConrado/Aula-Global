@@ -10,9 +10,10 @@ import { ArrowLeft, CheckCircle, HelpCircle, SkipForward } from "lucide-react";
 import dynamic from "next/dynamic";
 
 // Importaciones dinámicas para evitar SSR de componentes que usan APIs del navegador
-const EmotionDetector = dynamic(() => import("@/components/monitoring/EmotionDetector"), { ssr: false });
-const CalmingScreen   = dynamic(() => import("@/components/ui/CalmingScreen"),           { ssr: false });
-const ArteCanvas      = dynamic(() => import("@/components/activities/ArteCanvas"),       { ssr: false });
+const EmotionDetector      = dynamic(() => import("@/components/monitoring/EmotionDetector"),        { ssr: false });
+const CalmingScreen        = dynamic(() => import("@/components/ui/CalmingScreen"),                  { ssr: false });
+const ArteCanvas           = dynamic(() => import("@/components/activities/ArteCanvas"),             { ssr: false });
+const PresentationViewer   = dynamic(() => import("@/components/student/PresentationViewer"),        { ssr: false });
 
 function isArteActivity(activity: ActivityResponse): boolean {
   const tipo    = activity.content?.tipo as string | undefined;
@@ -49,7 +50,8 @@ export default function ActividadPage() {
   const [answers,         setAnswers]         = useState<number[]>([]);
   const [showFeedback,    setShowFeedback]    = useState(false);
 
-  const [arteProgress, setArteProgress] = useState(0);
+  const [arteProgress,      setArteProgress]      = useState(0);
+  const [showPresentation,  setShowPresentation]  = useState(true); // shown first if activity has a PPTX
   const startTimeRef = useRef(Date.now());
 
   const loadActivity = useCallback(async () => {
@@ -157,7 +159,7 @@ export default function ActividadPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-soft-blue via-white to-soft-purple student-shell">
       <CalmingScreen />
-      <EmotionDetector active={!showTemario || !activity.content?.temario} />
+      <EmotionDetector active={!showPresentation && (!showTemario || !activity.content?.temario)} />
 
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-sm border-b border-gray-100 px-6 py-4">
@@ -192,8 +194,18 @@ export default function ActividadPage() {
 
       <main className="max-w-5xl mx-auto px-6 py-8">
 
-        {/* ── Temario de la lección ── */}
-        {showTemario && !completed && activity.content?.temario && (
+        {/* ── Paso 1: Presentación PPTX ── */}
+        {showPresentation && !completed && activity.content?.presentacion_url && (
+          <PresentationViewer
+            url={activity.content.presentacion_url as string}
+            title={activity.title}
+            onContinue={() => setShowPresentation(false)}
+          />
+        )}
+
+        {/* ── Paso 2: Temario de la lección ── */}
+        {(!showPresentation || !activity.content?.presentacion_url) &&
+          showTemario && !completed && activity.content?.temario && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -224,8 +236,9 @@ export default function ActividadPage() {
           </motion.div>
         )}
 
-        {/* ── Contenido principal (oculto mientras se muestra el temario) ── */}
-        {(!showTemario || !activity.content?.temario) && (
+        {/* ── Paso 3: Actividad (oculta mientras haya presentación o temario pendiente) ── */}
+        {(!showPresentation || !activity.content?.presentacion_url) &&
+         (!showTemario || !activity.content?.temario) && (
           <>
             {completed ? (
               <motion.div
