@@ -66,6 +66,7 @@ export default function EmotionDetector({ active = false }: Props) {
   const wsRef                 = useRef<MonitoringWebSocket | null>(null);
   const faceMeshRef           = useRef<unknown>(null);
   const lastLandmarksRef      = useRef<{ x: number; y: number; z: number }[] | null>(null);
+  const overlayRafRef         = useRef<number>(0);               // rAF loop handle
   const monitoringIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const frameIntervalRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const emotionIntervalRef    = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -268,6 +269,7 @@ export default function EmotionDetector({ active = false }: Props) {
   // ── Detener todo ───────────────────────────────────────────────────────────
   const stopAll = useCallback(() => {
     mountedRef.current = false;
+    if (overlayRafRef.current) cancelAnimationFrame(overlayRafRef.current);
     wsRef.current?.disconnect(); wsRef.current = null;
     if (monitoringIntervalRef.current) { clearInterval(monitoringIntervalRef.current); monitoringIntervalRef.current = null; }
     if (frameIntervalRef.current)      { clearInterval(frameIntervalRef.current);      frameIntervalRef.current = null; }
@@ -341,6 +343,28 @@ export default function EmotionDetector({ active = false }: Props) {
     }
     setPermission("granted"); // ← widget aparece con video inmediatamente
 
+    // ── rAF draw loop: canvas como pantalla principal ──────────────────────
+    // En móvil, <video> dentro de position:fixed puede quedar negro aunque la
+    // cámara esté activa. Solución: ocultar el video y renderizar cada frame
+    // del stream en el canvas via requestAnimationFrame.
+    // El canvas sí pinta correctamente en Android/iOS.
+    const drawLoop = () => {
+      if (!mountedRef.current) return;
+      const vid     = videoRef.current;
+      const oCanvas = overlayCanvasRef.current;
+      if (vid && oCanvas && vid.readyState >= 2) {
+        const ctx = oCanvas.getContext("2d");
+        if (ctx) {
+          ctx.clearRect(0, 0, oCanvas.width, oCanvas.height);
+          ctx.drawImage(vid, 0, 0, oCanvas.width, oCanvas.height);
+          const lm = lastLandmarksRef.current;
+          if (lm && lm.length >= 468) drawFaceMesh(ctx, lm, oCanvas.width, oCanvas.height);
+        }
+      }
+      overlayRafRef.current = requestAnimationFrame(drawLoop);
+    };
+    overlayRafRef.current = requestAnimationFrame(drawLoop);
+
     // ── Intervalos (funcionan incluso sin malla facial) ────────────────────
 
     // Actualizar emoción mostrada (500 ms) con suavizado temporal
@@ -403,28 +427,13 @@ export default function EmotionDetector({ active = false }: Props) {
       minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
     });
 
+    // onResults: solo actualiza lastLandmarksRef.
+    // El rAF drawLoop (iniciado arriba) ya dibuja video + malla en cada frame.
     faceMesh.onResults((results: {
       multiFaceLandmarks?: { x: number; y: number; z: number }[][];
     }) => {
       if (!mountedRef.current) return;
-      const oCanvas = overlayCanvasRef.current;
-      if (results.multiFaceLandmarks?.[0]) {
-        lastLandmarksRef.current = results.multiFaceLandmarks[0];
-        // Dibujar malla en tiempo real en el canvas visible
-        if (oCanvas) {
-          const oCtx = oCanvas.getContext("2d");
-          if (oCtx) {
-            oCtx.clearRect(0, 0, oCanvas.width, oCanvas.height);
-            drawFaceMesh(oCtx, results.multiFaceLandmarks[0], oCanvas.width, oCanvas.height);
-          }
-        }
-      } else {
-        lastLandmarksRef.current = null;
-        if (oCanvas) {
-          const oCtx = oCanvas.getContext("2d");
-          if (oCtx) oCtx.clearRect(0, 0, oCanvas.width, oCanvas.height);
-        }
-      }
+      lastLandmarksRef.current = results.multiFaceLandmarks?.[0] ?? null;
     });
 
     faceMeshRef.current = faceMesh;
@@ -540,16 +549,17 @@ export default function EmotionDetector({ active = false }: Props) {
                 {/* Video en vivo + overlay de malla facial */}
                 <div className="relative" style={{ aspectRatio: "4/3" }}>
 
-                  {/* Cámara con efecto espejo */}
+                  {/* Video oculto — fuente del stream para drawImage y MediaPipe.
+                      En móvil, <video> en position:fixed queda negro; el canvas sí pinta. */}
                   <video
                     ref={videoRef}
                     width={320} height={240}
                     playsInline muted autoPlay
-                    className="w-full h-full object-cover block"
-                    style={{ transform: "scaleX(-1)" }}
+                    style={{ position: "absolute", opacity: 0, width: 1, height: 1, pointerEvents: "none" }}
                   />
 
-                  {/* Canvas de malla — mismo mirror que el video para alinear landmarks */}
+                  {/* Canvas principal — recibe video + malla facial via rAF.
+                      scaleX(-1) = efecto espejo, igual que el video original. */}
                   <canvas
                     ref={overlayCanvasRef}
                     width={320} height={240}

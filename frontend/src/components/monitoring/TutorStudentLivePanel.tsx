@@ -30,16 +30,18 @@ interface Props {
 }
 
 export default function TutorStudentLivePanel({ studentId, token }: Props) {
-  const wsRef      = useRef<TutorMonitoringWebSocket | null>(null);
-  const mountedRef = useRef(true);
+  const wsRef           = useRef<TutorMonitoringWebSocket | null>(null);
+  const mountedRef      = useRef(true);
+  const lastDataRef     = useRef<number>(0);        // timestamp del último dato recibido
 
-  const [wsOnline,   setWsOnline]   = useState(false);
-  const [videoFrame, setVideoFrame] = useState<string | null>(null);
-  const [emotion,    setEmotion]    = useState("neutro");
-  const [attention,  setAttention]  = useState(0.5);
-  const [stimming,   setStimming]   = useState(false);
-  const [crisis,     setCrisis]     = useState<string | null>(null);
-  const [history,    setHistory]    = useState<EmotionEntry[]>([]);
+  const [wsOnline,       setWsOnline]       = useState(false);
+  const [studentActive,  setStudentActive]  = useState(false); // recibió datos en los últimos 15s
+  const [videoFrame,     setVideoFrame]     = useState<string | null>(null);
+  const [emotion,        setEmotion]        = useState("neutro");
+  const [attention,      setAttention]      = useState(0.5);
+  const [stimming,       setStimming]       = useState(false);
+  const [crisis,         setCrisis]         = useState<string | null>(null);
+  const [history,        setHistory]        = useState<EmotionEntry[]>([]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -49,6 +51,9 @@ export default function TutorStudentLivePanel({ studentId, token }: Props) {
       token,
       (data: TutorMonitoringUpdate) => {
         if (!mountedRef.current) return;
+
+        // Marcar que el estudiante está activo (enviando datos)
+        lastDataRef.current = Date.now();
 
         if (data.type === "frame_update") {
           // Frame de video con malla facial
@@ -80,8 +85,16 @@ export default function TutorStudentLivePanel({ studentId, token }: Props) {
     ws.connect();
     wsRef.current = ws;
 
+    // Revisar cada 5 s si el estudiante sigue mandando datos.
+    // Si no llegó nada en 15 s → marcar como inactivo.
+    const activityCheck = setInterval(() => {
+      if (!mountedRef.current) return;
+      setStudentActive(Date.now() - lastDataRef.current < 15_000);
+    }, 5_000);
+
     return () => {
       mountedRef.current = false;
+      clearInterval(activityCheck);
       ws.disconnect();
       wsRef.current = null;
     };
@@ -99,16 +112,20 @@ export default function TutorStudentLivePanel({ studentId, token }: Props) {
         <span
           className="w-2.5 h-2.5 rounded-full flex-shrink-0 transition-colors"
           style={{
-            background: wsOnline ? "#22C55E" : "#CBD5E1",
-            boxShadow:  wsOnline ? "0 0 7px #22C55E" : "none",
+            background: studentActive ? "#22C55E" : wsOnline ? "#FBBF24" : "#CBD5E1",
+            boxShadow:  studentActive ? "0 0 7px #22C55E" : "none",
           }}
         />
         <h3 className="font-bold text-gray-700 text-sm">Monitoreo en vivo</h3>
         <span
           className="ml-auto text-[11px] font-semibold"
-          style={{ color: wsOnline ? "#16A34A" : "#94A3B8" }}
+          style={{ color: studentActive ? "#16A34A" : wsOnline ? "#B45309" : "#94A3B8" }}
         >
-          {wsOnline ? "Estudiante conectado" : "Esperando conexión del estudiante…"}
+          {studentActive
+            ? "Estudiante en sesión"
+            : wsOnline
+              ? "Esperando al estudiante…"
+              : "Sin conexión"}
         </span>
       </div>
 
