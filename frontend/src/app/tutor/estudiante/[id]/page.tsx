@@ -2,7 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
+
+const TutorStudentLivePanel = dynamic(
+  () => import("@/components/monitoring/TutorStudentLivePanel"),
+  { ssr: false },
+);
 import { useSessionStore } from "@/store/sessionStore";
 import {
   api,
@@ -1020,9 +1026,15 @@ export default function TutorEstudiantePage() {
           </div>
 
           {/* ════════════════════════════════════════════════════════
-              RIGHT COLUMN — Session history
+              RIGHT COLUMN — Live monitoring + Session history
           ════════════════════════════════════════════════════════ */}
           <div className="lg:col-span-2">
+
+            {/* ── Panel de monitoreo en vivo ── */}
+            {token && (
+              <TutorStudentLivePanel studentId={studentId} token={token} />
+            )}
+
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}

@@ -205,7 +205,8 @@ export interface TutorMonitoringUpdate {
   type: "monitoring_update" | "frame_update" | string;
   student_id: string;
   // Campos opcionales — solo presentes en monitoring_update
-  emocion?: string;
+  emocion?: string;          // campo formal
+  emocion_actual?: string;   // alias que usa el backend (coincide con MonitoringResponse)
   nivel_atencion?: number;
   stimming?: boolean;
   acciones?: AdaptationAction[];

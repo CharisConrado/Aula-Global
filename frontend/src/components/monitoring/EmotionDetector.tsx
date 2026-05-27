@@ -1,5 +1,24 @@
 "use client";
 
+/**
+ * EmotionDetector — Aula Global
+ *
+ * Muestra un widget visible (esquina inferior derecha) con:
+ *  - Video en vivo del estudiante con efecto espejo
+ *  - Malla facial de colores superpuesta en tiempo real
+ *  - Emoji + etiqueta de emoción detectada (suavizada temporalmente)
+ *  - Barra de nivel de atención
+ *  - Estado de conexión WebSocket al tutor
+ *  - Botón minimizar / restaurar
+ *
+ * Internamente:
+ *  - MediaPipe FaceMesh (CDN global window.FaceMesh)
+ *  - EAR / MAR / brow furrow / smile score, todos normalizados por IOD
+ *  - Buffer temporal de 7 lecturas → moda (evita parpadeo de emociones)
+ *  - Canvas oculto para enviar frames con malla al tutor (4 fps)
+ *  - Canvas de overlay visible para la malla en el widget (~30 fps)
+ */
+
 import { useEffect, useRef, useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSessionStore } from "@/store/sessionStore";
@@ -9,18 +28,18 @@ import {
   type MonitoringResponse,
 } from "@/lib/websocket";
 
-// ── Metadatos de emoción ───────────────────────────────────────────────────────
-const EMOTION_META: Record<string, { emoji: string; color: string; label: string; bg: string }> = {
-  neutro:    { emoji: "😐", color: "#94A3B8", label: "Tranquilo",  bg: "rgba(148,163,184,0.18)" },
-  feliz:     { emoji: "😄", color: "#FBBF24", label: "¡Feliz!",    bg: "rgba(251,191,36,0.18)"  },
-  frustrado: { emoji: "😤", color: "#F87171", label: "Frustrado",  bg: "rgba(248,113,113,0.18)" },
-  ansioso:   { emoji: "😰", color: "#FB923C", label: "Ansioso",    bg: "rgba(251,146,60,0.18)"  },
-  distraido: { emoji: "😶", color: "#A78BFA", label: "Distraído",  bg: "rgba(167,139,250,0.18)" },
-  estresado: { emoji: "😟", color: "#F87171", label: "Estresado",  bg: "rgba(248,113,113,0.18)" },
-  calmado:   { emoji: "😌", color: "#34D399", label: "Calmado",    bg: "rgba(52,211,153,0.18)"  },
+// ── Metadatos de emoción ─────────────────────────────────────────────────────
+const EMOTION_META: Record<string, { emoji: string; color: string; label: string }> = {
+  neutro:    { emoji: "😐", color: "#94A3B8", label: "Tranquilo"  },
+  feliz:     { emoji: "😄", color: "#FBBF24", label: "¡Feliz!"    },
+  frustrado: { emoji: "😤", color: "#F87171", label: "Frustrado"  },
+  ansioso:   { emoji: "😰", color: "#FB923C", label: "Ansioso"    },
+  distraido: { emoji: "😶", color: "#A78BFA", label: "Distraído"  },
+  estresado: { emoji: "😟", color: "#F87171", label: "Estresado"  },
+  calmado:   { emoji: "😌", color: "#34D399", label: "Calmado"    },
 };
 
-/* Índices clave del rostro (MediaPipe FaceMesh — 468 puntos) */
+// ── Contornos de MediaPipe FaceMesh (468 puntos) ─────────────────────────────
 const FACE_OVAL  = [10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109,10];
 const LEFT_EYE   = [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246,33];
 const RIGHT_EYE  = [263,249,390,373,374,380,381,382,362,398,384,385,386,387,388,466,263];
@@ -28,22 +47,34 @@ const LIPS_OUTER = [61,146,91,181,84,17,314,405,321,375,291,409,270,269,267,0,37
 const LEFT_BROW  = [70,63,105,66,107,55,65,52,53,46];
 const RIGHT_BROW = [336,296,334,293,300,285,295,282,283,276];
 
+// ── Helper de distancia 2D ───────────────────────────────────────────────────
+const dist2D = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+  Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+
 interface Props {
   active?: boolean;
 }
 
 export default function EmotionDetector({ active = false }: Props) {
-  const videoRef              = useRef<HTMLVideoElement>(null);
-  const canvasRef             = useRef<HTMLCanvasElement>(null);   // oculto — solo para capturar frames
+  // ── Refs de medios ──────────────────────────────────────────────────────────
+  const videoRef         = useRef<HTMLVideoElement>(null);
+  const canvasRef        = useRef<HTMLCanvasElement>(null);     // oculto — frames al tutor
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);     // visible — malla sobre video
+  const streamRef        = useRef<MediaStream | null>(null);
+
+  // ── Refs de monitoreo ───────────────────────────────────────────────────────
   const wsRef                 = useRef<MonitoringWebSocket | null>(null);
-  const monitoringIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const frameIntervalRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const faceMeshRef           = useRef<unknown>(null);
   const lastLandmarksRef      = useRef<{ x: number; y: number; z: number }[] | null>(null);
-  const streamRef             = useRef<MediaStream | null>(null);
-  const mountedRef            = useRef(false);
+  const monitoringIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const frameIntervalRef      = useRef<ReturnType<typeof setInterval> | null>(null);
+  const emotionIntervalRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const emotionBufferRef      = useRef<string[]>([]);
+  const currentEmotionRef     = useRef<string>("neutro"); // sin stale-closure en captureFrame
   const clickTimestampsRef    = useRef<number[]>([]);
+  const mountedRef            = useRef(false);
 
+  // ── Estado UI ───────────────────────────────────────────────────────────────
   const [permission,     setPermission]     = useState<"idle" | "pending" | "granted" | "denied">("idle");
   const [currentEmotion, setCurrentEmotion] = useState("neutro");
   const [wsConnected,    setWsConnected]    = useState(false);
@@ -55,14 +86,14 @@ export default function EmotionDetector({ active = false }: Props) {
     setEmotionState, addCrisisAlert, setPendingActions, setShowCalmingScreen,
   } = useSessionStore();
 
-  const meta = EMOTION_META[currentEmotion] || EMOTION_META.neutro;
+  const meta = EMOTION_META[currentEmotion] ?? EMOTION_META.neutro;
 
-  /* ── Abrir modal al activar ── */
+  // ── Activar modal al iniciar actividad ──────────────────────────────────────
   useEffect(() => {
     if (active && permission === "idle") setPermission("pending");
   }, [active, permission]);
 
-  /* ── Rastrear velocidad de clics ── */
+  // ── Rastrear velocidad de clics (indicador de estrés táctil) ───────────────
   useEffect(() => {
     const h = () => {
       const now = Date.now();
@@ -80,61 +111,110 @@ export default function EmotionDetector({ active = false }: Props) {
   const getClickSpeed = useCallback(() =>
     clickTimestampsRef.current.filter(t => Date.now() - t < 10_000).length / 10, []);
 
-  /* ── Análisis de landmarks ── */
-  const analyzeLandmarks = useCallback((landmarks: { x: number; y: number; z: number }[]) => {
-    if (!landmarks || landmarks.length < 468)
-      return { emotion: "neutro", attention_level: 0.5, stimming: false };
+  // ── Análisis facial mejorado ─────────────────────────────────────────────────
+  //
+  // Todas las métricas se normalizan por la Distancia Inter-Ocular (IOD)
+  // → invariantes a la distancia de la cámara y tamaño de cara en frame.
+  //
+  // Índices MediaPipe FaceMesh (468 puntos, coords normalizadas [0,1]):
+  //   Ojo izq: outer=33, inner=133, top=159, bottom=145
+  //   Ojo der: outer=263, inner=362, top=386, bottom=374
+  //   Cejas: izq_inner=107 der_inner=336, izq_top=105 der_top=334
+  //   Boca: izq=61, der=291, labio_sup=13, labio_inf=14
+  //   Nariz: punta=1
+  // ─────────────────────────────────────────────────────────────────────────────
+  const analyzeLandmarks = useCallback((lm: { x: number; y: number; z: number }[]) => {
+    if (lm.length < 468) return { emotion: "neutro", attention_level: 0.5, stimming: false };
 
-    const mouthOpen    = Math.abs(landmarks[13].y - landmarks[14].y);
-    const browDist     = (Math.abs(landmarks[70].y - landmarks[159].y) + Math.abs(landmarks[300].y - landmarks[386].y)) / 2;
-    const eyeOpenAvg   = (Math.abs(landmarks[159].y - landmarks[145].y) + Math.abs(landmarks[386].y - landmarks[374].y)) / 2;
-    const mouthWidth   = Math.abs(landmarks[291].x - landmarks[61].x);
-    const gazeDeviation = Math.abs(landmarks[1].x - landmarks[168].x);
-    const headMovement = Math.abs(landmarks[1].z);
+    // Referencia de escala: distancia inter-ocular (outer corners)
+    const IOD = Math.abs(lm[263].x - lm[33].x) || 0.08;
 
+    // ── Eye Aspect Ratio (EAR) ────────────────────────────────────────────────
+    // EAR = apertura vertical / ancho horizontal del ojo
+    // Ojo normal abierto: ~0.20 – 0.35 | muy abierto: >0.38 | cerrado: <0.12
+    const leftW  = dist2D(lm[33],  lm[133]);
+    const rightW = dist2D(lm[263], lm[362]);
+    const leftEAR  = leftW  > 0.001 ? Math.abs(lm[159].y - lm[145].y) / leftW  : 0;
+    const rightEAR = rightW > 0.001 ? Math.abs(lm[386].y - lm[374].y) / rightW : 0;
+    const ear = (leftEAR + rightEAR) / 2;
+
+    // ── Mouth Aspect Ratio (MAR) ──────────────────────────────────────────────
+    // MAR = apertura vertical / ancho horizontal de boca
+    // Cerrada: ~0 | abierta: >0.25
+    const mouthW = dist2D(lm[61], lm[291]);
+    const mar = mouthW > 0.001 ? Math.abs(lm[13].y - lm[14].y) / mouthW : 0;
+
+    // ── Smile score (comisuras vs. centro de boca) ────────────────────────────
+    // Positivo: comisuras arriba (sonrisa) | Negativo: comisuras abajo (ceño)
+    const mouthCenterY = (lm[13].y + lm[14].y) / 2;
+    const avgCornerY   = (lm[61].y + lm[291].y) / 2;
+    const smileScore   = (mouthCenterY - avgCornerY) / IOD;
+
+    // ── Ceño fruncido (distancia horizontal entre cejas interiores) ───────────
+    // Cejas juntas (frustración/concentración): < 0.80
+    // Cejas separadas (relajado/sorprendido): > 1.20
+    const browFurrow = dist2D(lm[107], lm[336]) / IOD;
+
+    // ── Cejas levantadas (distancia ceja-ojo) ────────────────────────────────
+    // Mayor = cejas más altas → sorpresa/ansiedad
+    const lBrowRaise = (lm[159].y - lm[105].y) / IOD;
+    const rBrowRaise = (lm[386].y - lm[334].y) / IOD;
+    const browRaise  = (lBrowRaise + rBrowRaise) / 2;
+
+    // ── Desviación de mirada ──────────────────────────────────────────────────
+    // Cuánto se desvía la nariz del centro visual → indica si mira a cámara
+    const midEyeX      = (lm[33].x + lm[263].x) / 2;
+    const gazeDeviation = Math.abs(lm[1].x - midEyeX) / IOD;
+
+    // ── Movimiento de cabeza (eje Z de nariz) ─────────────────────────────────
+    // Inclinación/alejamiento brusco → stimming o agitación
+    const headZ = Math.abs(lm[1].z);
+
+    // ── Clasificación ─────────────────────────────────────────────────────────
     let emotion = "neutro";
-    if      (mouthWidth > 0.15 && mouthOpen < 0.03)  emotion = "feliz";
-    else if (browDist < 0.02   && mouthOpen < 0.02)  emotion = "frustrado";
-    else if (eyeOpenAvg > 0.025 && mouthOpen > 0.02) emotion = "ansioso";
-    else if (browDist < 0.025  && headMovement > 0.1) emotion = "estresado";
-    else if (eyeOpenAvg < 0.015)
-      emotion = gazeDeviation > 0.05 ? "distraido" : "calmado";
+    if      (smileScore > 0.06  && mar < 0.30)                     emotion = "feliz";
+    else if (browFurrow < 0.80  && mar < 0.05 && browRaise < 0.18) emotion = "frustrado";
+    else if (ear > 0.38         && browRaise > 0.22)               emotion = "ansioso";
+    else if (browFurrow < 0.88  && headZ > 0.06)                   emotion = "estresado";
+    else if (gazeDeviation > 0.18)                                  emotion = "distraido";
+    else if (ear > 0.15 && ear < 0.30 && gazeDeviation < 0.10)     emotion = "calmado";
 
-    return {
-      emotion,
-      attention_level: Math.round(
-        Math.max(0, Math.min(1, 1 - gazeDeviation * 10)) *
-        (eyeOpenAvg < 0.012 ? 0.5 : 1) * 100
-      ) / 100,
-      stimming: headMovement > 0.15,
-    };
+    // ── Nivel de atención (0-1) ───────────────────────────────────────────────
+    const attnGaze = Math.max(0, 1 - gazeDeviation * 3.5);
+    const attnEAR  = ear > 0.08 ? 1 : ear / 0.08;
+    const attention_level = Math.max(0, Math.min(1, attnGaze * 0.7 + attnEAR * 0.3));
+
+    return { emotion, attention_level, stimming: headZ > 0.12 };
   }, []);
 
-  /* ── Dibuja la malla facial sobre el canvas ── */
+  // ── Dibujar malla facial ──────────────────────────────────────────────────
   const drawFaceMesh = useCallback((
     ctx: CanvasRenderingContext2D,
     landmarks: { x: number; y: number }[],
-    w: number, h: number,
+    w: number,
+    h: number,
   ) => {
     const drawPath = (idxs: number[], stroke: string, lw = 1.5) => {
       ctx.beginPath(); ctx.strokeStyle = stroke; ctx.lineWidth = lw;
       idxs.forEach((idx, i) => {
         const p = landmarks[idx]; if (!p) return;
-        const x = p.x * w, y = p.y * h;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        if (i === 0) ctx.moveTo(p.x * w, p.y * h); else ctx.lineTo(p.x * w, p.y * h);
       });
       ctx.stroke();
     };
+    // Puntos de landmark
     ctx.fillStyle = "rgba(0,255,136,0.55)";
     for (const p of landmarks) {
       ctx.beginPath(); ctx.arc(p.x * w, p.y * h, 0.9, 0, Math.PI * 2); ctx.fill();
     }
+    // Contornos clave
     drawPath(FACE_OVAL,  "rgba(0,255,200,0.85)", 1.5);
     drawPath(LEFT_EYE,   "rgba(0,220,255,0.95)", 1.5);
     drawPath(RIGHT_EYE,  "rgba(0,220,255,0.95)", 1.5);
     drawPath(LIPS_OUTER, "rgba(255,100,200,0.9)", 1.5);
     drawPath(LEFT_BROW,  "rgba(255,230,100,0.85)", 1.4);
     drawPath(RIGHT_BROW, "rgba(255,230,100,0.85)", 1.4);
+    // Punto nariz (rojo)
     const nose = landmarks[1];
     if (nose) {
       ctx.fillStyle = "rgba(255,80,80,0.95)";
@@ -142,7 +222,8 @@ export default function EmotionDetector({ active = false }: Props) {
     }
   }, []);
 
-  /* ── Captura frame con malla para el tutor ── */
+  // ── Captura frame con malla → enviar al tutor ─────────────────────────────
+  // Usa currentEmotionRef para no tener stale closure en la dependencia.
   const captureFrameWithMesh = useCallback((): string | undefined => {
     const video  = videoRef.current;
     const canvas = canvasRef.current;
@@ -154,16 +235,17 @@ export default function EmotionDetector({ active = false }: Props) {
     const lm = lastLandmarksRef.current;
     if (lm && lm.length >= 468) {
       drawFaceMesh(ctx, lm, W, H);
-      ctx.fillStyle = "rgba(0,0,0,0.55)";
-      ctx.fillRect(6, H - 22, 100, 16);
+      // Etiqueta de emoción sobre el frame enviado al tutor
+      ctx.fillStyle = "rgba(0,0,0,0.60)";
+      ctx.fillRect(6, H - 22, 116, 16);
       ctx.fillStyle = "#A2F0CB";
       ctx.font = "bold 11px sans-serif";
-      ctx.fillText(currentEmotion.toUpperCase(), 10, H - 10);
+      ctx.fillText(currentEmotionRef.current.toUpperCase(), 10, H - 10);
     }
     return canvas.toDataURL("image/jpeg", 0.55).split(",")[1];
-  }, [drawFaceMesh, currentEmotion]);
+  }, [drawFaceMesh]); // currentEmotionRef es un ref, no dependencia
 
-  /* ── Respuesta del backend ── */
+  // ── Respuesta del backend ──────────────────────────────────────────────────
   const handleMonitoringResponse = useCallback((response: MonitoringResponse) => {
     setEmotionState({ emocion: response.emocion_actual, nivel_atencion: response.nivel_atencion });
     const actionNames = response.acciones.map(a => a.accion);
@@ -174,27 +256,28 @@ export default function EmotionDetector({ active = false }: Props) {
         id: `crisis-${Date.now()}`,
         student_id: active_student_id || "",
         nivel: response.alerta_crisis,
-        mensaje: response.alerta_crisis === "grave"
-          ? "Se ha contactado a un profesional"
-          : response.alerta_crisis === "moderada"
-          ? "Se ha notificado a tu tutor"
-          : "El contenido se ha adaptado para ti",
+        mensaje:
+          response.alerta_crisis === "grave"   ? "Se ha contactado a un profesional" :
+          response.alerta_crisis === "moderada" ? "Se ha notificado a tu tutor" :
+                                                  "El contenido se ha adaptado para ti",
         timestamp: Date.now(),
       });
     }
   }, [active_student_id, setEmotionState, setPendingActions, setShowCalmingScreen, addCrisisAlert]);
 
-  /* ── Detener todo ── */
+  // ── Detener todo ───────────────────────────────────────────────────────────
   const stopAll = useCallback(() => {
     mountedRef.current = false;
     wsRef.current?.disconnect(); wsRef.current = null;
     if (monitoringIntervalRef.current) { clearInterval(monitoringIntervalRef.current); monitoringIntervalRef.current = null; }
     if (frameIntervalRef.current)      { clearInterval(frameIntervalRef.current);      frameIntervalRef.current = null; }
+    if (emotionIntervalRef.current)    { clearInterval(emotionIntervalRef.current);    emotionIntervalRef.current = null; }
     streamRef.current?.getTracks().forEach(t => t.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     faceMeshRef.current = null;
     lastLandmarksRef.current = null;
+    emotionBufferRef.current = [];
   }, []);
 
   useEffect(() => {
@@ -202,90 +285,145 @@ export default function EmotionDetector({ active = false }: Props) {
     return () => stopAll();
   }, [stopAll]);
 
-  /* ── Iniciar cámara + WS ── */
+  // ── Iniciar cámara + WebSocket + MediaPipe ─────────────────────────────────
   const startMonitoring = useCallback(async () => {
     if (!token || !user || !active_student_id) return;
 
+    // WebSocket del estudiante → backend
     wsRef.current = new MonitoringWebSocket(
       active_student_id, token, handleMonitoringResponse,
       (connected) => { if (mountedRef.current) setWsConnected(connected); }
     );
     wsRef.current.connect();
 
+    // Solicitar cámara
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 320, height: 240, facingMode: "user" },
       });
-      if (!mountedRef.current) { stream.getTracks().forEach(t => t.stop()); return; }
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      setPermission("granted");
-
-      // @ts-expect-error — MediaPipe global
-      if (typeof window !== "undefined" && window.FaceMesh) {
-        // @ts-expect-error — tipo externo
-        const faceMesh = new window.FaceMesh({
-          locateFile: (file: string) =>
-            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
-        });
-        faceMesh.setOptions({
-          maxNumFaces: 1, refineLandmarks: true,
-          minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
-        });
-        faceMesh.onResults((results: { multiFaceLandmarks?: { x: number; y: number; z: number }[][] }) => {
-          if (results.multiFaceLandmarks?.[0])
-            lastLandmarksRef.current = results.multiFaceLandmarks[0];
-        });
-        faceMeshRef.current = faceMesh;
-        const processFrame = async () => {
-          if (!mountedRef.current) return;
-          if (videoRef.current && faceMeshRef.current)
-            // @ts-expect-error — tipo externo
-            await faceMeshRef.current.send({ image: videoRef.current });
-          if (mountedRef.current) requestAnimationFrame(processFrame);
-        };
-        processFrame();
-      }
     } catch {
       setPermission("denied");
       return;
     }
+    if (!mountedRef.current) { stream.getTracks().forEach(t => t.stop()); return; }
 
-    /* Frames con malla facial → tutor (4 fps) */
+    streamRef.current = stream;
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play().catch(() => null);
+    }
+    setPermission("granted");
+
+    // ── Cargar MediaPipe FaceMesh (CDN global) ────────────────────────────
+    // @ts-expect-error — global desde CDN
+    if (typeof window !== "undefined" && window.FaceMesh) {
+      // @ts-expect-error — tipo externo
+      const faceMesh = new window.FaceMesh({
+        locateFile: (file: string) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+      });
+      faceMesh.setOptions({
+        maxNumFaces: 1, refineLandmarks: true,
+        minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
+      });
+
+      faceMesh.onResults((results: {
+        multiFaceLandmarks?: { x: number; y: number; z: number }[][];
+      }) => {
+        if (!mountedRef.current) return;
+        const oCanvas = overlayCanvasRef.current;
+        if (results.multiFaceLandmarks?.[0]) {
+          lastLandmarksRef.current = results.multiFaceLandmarks[0];
+          // Dibujar malla en tiempo real sobre el canvas de overlay visible
+          if (oCanvas) {
+            const oCtx = oCanvas.getContext("2d");
+            if (oCtx) {
+              oCtx.clearRect(0, 0, oCanvas.width, oCanvas.height);
+              drawFaceMesh(oCtx, results.multiFaceLandmarks[0], oCanvas.width, oCanvas.height);
+            }
+          }
+        } else {
+          // Sin rostro detectado → limpiar overlay
+          lastLandmarksRef.current = null;
+          if (oCanvas) {
+            const oCtx = oCanvas.getContext("2d");
+            if (oCtx) oCtx.clearRect(0, 0, oCanvas.width, oCanvas.height);
+          }
+        }
+      });
+
+      faceMeshRef.current = faceMesh;
+      const processFrame = async () => {
+        if (!mountedRef.current) return;
+        if (videoRef.current && faceMeshRef.current)
+          // @ts-expect-error — tipo externo
+          await faceMeshRef.current.send({ image: videoRef.current });
+        if (mountedRef.current) requestAnimationFrame(processFrame);
+      };
+      processFrame();
+    }
+
+    // ── Actualizar emoción mostrada (500 ms) con suavizado temporal ───────
+    // Toma la moda de las últimas 7 lecturas → evita parpadeo de emociones.
+    emotionIntervalRef.current = setInterval(() => {
+      if (!mountedRef.current) return;
+      const lm = lastLandmarksRef.current;
+      if (!lm) return;
+      const raw = analyzeLandmarks(lm);
+
+      // Buffer de suavizado
+      emotionBufferRef.current = [...emotionBufferRef.current.slice(-6), raw.emotion];
+      const counts: Record<string, number> = {};
+      emotionBufferRef.current.forEach(e => { counts[e] = (counts[e] || 0) + 1; });
+      const smoothed = Object.entries(counts).sort(([, a], [, b]) => b - a)[0][0];
+
+      currentEmotionRef.current = smoothed;
+      setCurrentEmotion(smoothed);
+      setAttentionPct(Math.round(raw.attention_level * 100));
+    }, 500);
+
+    // ── Frames con malla → tutor (4 fps) ─────────────────────────────────
     frameIntervalRef.current = setInterval(() => {
       if (!mountedRef.current || !wsRef.current) return;
       const frame = captureFrameWithMesh();
       if (frame) wsRef.current.sendFrame(frame);
     }, 250);
 
-    /* Análisis de emoción → backend (cada 2 s) */
+    // ── Datos de monitoreo → backend (cada 2 s) ───────────────────────────
     monitoringIntervalRef.current = setInterval(() => {
       if (!mountedRef.current || !wsRef.current || !activeSession) return;
       const lm       = lastLandmarksRef.current;
-      const analysis = lm ? analyzeLandmarks(lm) : { emotion: "neutro", attention_level: 0.5, stimming: false };
-      const tactile  = getClickSpeed() > 2;
-      setCurrentEmotion(analysis.emotion);
-      setAttentionPct(Math.round(analysis.attention_level * 100));
+      const analysis = lm
+        ? analyzeLandmarks(lm)
+        : { emotion: "neutro", attention_level: 0.5, stimming: false };
+      const tactile = getClickSpeed() > 2;
       setEmotionState({
-        emocion: analysis.emotion, nivel_atencion: analysis.attention_level,
-        stimming: analysis.stimming, tactile_pressure: tactile,
+        emocion:          currentEmotionRef.current,
+        nivel_atencion:   analysis.attention_level,
+        stimming:         analysis.stimming,
+        tactile_pressure: tactile,
       });
       wsRef.current.send({
-        id_session: activeSession.id_session,
-        emotion: analysis.emotion, attention_level: analysis.attention_level,
-        stimming: analysis.stimming, tactile_pressure: tactile,
+        id_session:       activeSession.id_session,
+        emotion:          currentEmotionRef.current,
+        attention_level:  analysis.attention_level,
+        stimming:         analysis.stimming,
+        tactile_pressure: tactile,
       } as MonitoringData);
     }, 2000);
-  }, [token, user, active_student_id, activeSession, analyzeLandmarks,
-      captureFrameWithMesh, getClickSpeed, handleMonitoringResponse, setEmotionState]);
+  }, [
+    token, user, active_student_id, activeSession,
+    analyzeLandmarks, captureFrameWithMesh, drawFaceMesh,
+    getClickSpeed, handleMonitoringResponse, setEmotionState,
+  ]);
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // JSX
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <>
-      {/* ── Modal de permiso ── */}
+      {/* ── Modal de permiso de cámara ─────────────────────────────────────── */}
       <AnimatePresence>
         {permission === "pending" && token && active_student_id && (
           <motion.div
@@ -314,7 +452,10 @@ export default function EmotionDetector({ active = false }: Props) {
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                   onClick={startMonitoring}
                   className="w-full py-3.5 rounded-2xl font-extrabold text-white text-base"
-                  style={{ background: "linear-gradient(135deg,#A2D9A1,#7dc97c)", boxShadow: "0 4px 16px rgba(162,217,161,0.4)" }}
+                  style={{
+                    background: "linear-gradient(135deg,#A2D9A1,#7dc97c)",
+                    boxShadow: "0 4px 16px rgba(162,217,161,0.4)",
+                  }}
                 >
                   ✅ Sí, acepto
                 </motion.button>
@@ -331,7 +472,7 @@ export default function EmotionDetector({ active = false }: Props) {
         )}
       </AnimatePresence>
 
-      {/* ── Widget de cámara + emoción (esquina inferior derecha) ── */}
+      {/* ── Widget de cámara + emoción (esquina inferior derecha) ─────────── */}
       <AnimatePresence>
         {permission === "granted" && (
           <motion.div
@@ -340,13 +481,12 @@ export default function EmotionDetector({ active = false }: Props) {
             exit={{ opacity: 0, scale: 0.8, x: 20 }}
             transition={{ type: "spring", stiffness: 200, damping: 22 }}
             className="fixed bottom-4 right-4 z-40 select-none"
-            style={{ width: minimized ? "auto" : 168 }}
+            style={{ width: minimized ? "auto" : 172 }}
           >
             {minimized ? (
-              /* ── Versión minimizada: solo emoji ── */
+              /* ── Estado minimizado: píldora emoji + etiqueta ── */
               <motion.button
-                whileHover={{ scale: 1.1 }}
-                whileTap={{ scale: 0.95 }}
+                whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
                 onClick={() => setMinimized(false)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-2xl font-bold text-sm"
                 style={{
@@ -369,23 +509,36 @@ export default function EmotionDetector({ active = false }: Props) {
                 className="rounded-2xl overflow-hidden"
                 style={{
                   border: `2px solid ${meta.color}55`,
-                  boxShadow: `0 8px 28px rgba(0,0,0,0.35), 0 0 0 1px ${meta.color}22`,
+                  boxShadow: `0 8px 28px rgba(0,0,0,0.38), 0 0 0 1px ${meta.color}22`,
                   background: "#0F172A",
                 }}
               >
-                {/* Cámara en vivo */}
+                {/* Video en vivo + overlay de malla facial */}
                 <div className="relative" style={{ aspectRatio: "4/3" }}>
+
+                  {/* Cámara con efecto espejo */}
                   <video
                     ref={videoRef}
                     width={320} height={240}
                     playsInline muted
                     className="w-full h-full object-cover block"
-                    style={{ transform: "scaleX(-1)" }}   // espejo natural
+                    style={{ transform: "scaleX(-1)" }}
+                  />
+
+                  {/* Canvas de malla — mismo mirror que el video para alinear landmarks */}
+                  <canvas
+                    ref={overlayCanvasRef}
+                    width={320} height={240}
+                    className="absolute inset-0 w-full h-full"
+                    style={{ transform: "scaleX(-1)", pointerEvents: "none" }}
+                    aria-hidden="true"
                   />
 
                   {/* Badge EN VIVO */}
-                  <div className="absolute top-2 left-2 flex items-center gap-1 px-1.5 py-0.5 rounded-full"
-                    style={{ background: "rgba(239,68,68,0.85)" }}>
+                  <div
+                    className="absolute top-2 left-2 flex items-center gap-1 px-1.5 py-0.5 rounded-full"
+                    style={{ background: "rgba(239,68,68,0.85)" }}
+                  >
                     <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                     <span className="text-[8px] font-extrabold text-white tracking-wider">EN VIVO</span>
                   </div>
@@ -394,11 +547,13 @@ export default function EmotionDetector({ active = false }: Props) {
                   <button
                     onClick={() => setMinimized(true)}
                     className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
-                    style={{ background: "rgba(0,0,0,0.5)" }}
+                    style={{ background: "rgba(0,0,0,0.55)" }}
+                    aria-label="Minimizar"
                   >✕</button>
 
-                  {/* Gradiente inferior */}
-                  <div className="absolute bottom-0 left-0 right-0 h-16"
+                  {/* Gradiente inferior (para legibilidad del texto) */}
+                  <div
+                    className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none"
                     style={{ background: "linear-gradient(to top, rgba(0,0,0,0.80) 0%, transparent 100%)" }}
                   />
 
@@ -425,15 +580,16 @@ export default function EmotionDetector({ active = false }: Props) {
                   </div>
                 </div>
 
-                {/* Barra de atención */}
+                {/* Barra de atención + estado WS */}
                 <div className="px-2.5 py-2" style={{ background: "#111827" }}>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[9px] font-bold uppercase tracking-widest"
-                      style={{ color: "#475569" }}>Atención</span>
-                    <span className="text-[9px] font-extrabold"
-                      style={{ color: attentionPct > 60 ? "#34D399" : attentionPct > 30 ? "#FBBF24" : "#F87171" }}>
-                      {attentionPct}%
+                    <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "#475569" }}>
+                      Atención
                     </span>
+                    <span
+                      className="text-[9px] font-extrabold"
+                      style={{ color: attentionPct > 60 ? "#34D399" : attentionPct > 30 ? "#FBBF24" : "#F87171" }}
+                    >{attentionPct}%</span>
                   </div>
                   <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#1E293B" }}>
                     <motion.div
@@ -445,13 +601,12 @@ export default function EmotionDetector({ active = false }: Props) {
                       }}
                     />
                   </div>
-
-                  {/* WS status */}
                   <div className="flex items-center gap-1 mt-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                      style={{ background: wsConnected ? "#22C55E" : "#475569" }} />
-                    <span className="text-[8px] font-semibold"
-                      style={{ color: wsConnected ? "#22C55E" : "#475569" }}>
+                    <span
+                      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                      style={{ background: wsConnected ? "#22C55E" : "#475569" }}
+                    />
+                    <span className="text-[8px] font-semibold" style={{ color: wsConnected ? "#22C55E" : "#475569" }}>
                       {wsConnected ? "Conectado al tutor" : "Reconectando…"}
                     </span>
                   </div>
@@ -462,13 +617,8 @@ export default function EmotionDetector({ active = false }: Props) {
         )}
       </AnimatePresence>
 
-      {/* Canvas oculto — solo para capturar frames con malla y enviarlos al tutor */}
-      <canvas
-        ref={canvasRef}
-        width={320} height={240}
-        style={{ display: "none" }}
-        aria-hidden="true"
-      />
+      {/* Canvas oculto — solo para captura de frames con malla y envío al tutor */}
+      <canvas ref={canvasRef} width={320} height={240} style={{ display: "none" }} aria-hidden="true" />
     </>
   );
 }
