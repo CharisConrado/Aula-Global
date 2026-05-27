@@ -106,10 +106,14 @@ export class MonitoringWebSocket {
     }
   }
 
-  /** Envía solo un frame de video (alta frecuencia para efecto videollamada). */
-  sendFrame(frame: string): void {
+  /** Envía un frame de video con la emoción actual para el panel del tutor. */
+  sendFrame(frame: string, emocion?: string, nivel_atencion?: number): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: "frame", video_frame: frame }));
+      this.ws.send(JSON.stringify({
+        type: "frame",
+        video_frame: frame,
+        ...(emocion !== undefined ? { emocion, nivel_atencion } : {}),
+      }));
     }
   }
 

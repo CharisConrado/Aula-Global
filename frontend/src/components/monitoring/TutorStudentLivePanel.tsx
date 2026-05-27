@@ -58,9 +58,13 @@ export default function TutorStudentLivePanel({ studentId, token }: Props) {
         if (data.type === "frame_update") {
           // Frame de video con malla facial
           if (data.video_frame) setVideoFrame(data.video_frame);
-          // Algunos backends incluyen emoción también en frame_update
-          const emo = data.emocion_actual ?? data.emocion;
-          if (emo) setEmotion(emo);
+          // El cliente incluye emoción/atención en cada frame → actualizar UI en tiempo real
+          const emo  = data.emocion_actual ?? data.emocion;
+          const attn = data.nivel_atencion;
+          if (emo) {
+            setEmotion(emo);
+            if (attn !== undefined && attn !== null) setAttention(attn);
+          }
         } else {
           // monitoring_update — datos emocionales
           // El backend puede usar "emocion_actual" o "emocion".

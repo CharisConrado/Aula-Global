@@ -61,13 +61,20 @@ async def ws_estudiante(websocket: WebSocket, student_id: str):
             raw  = await websocket.receive_text()
             data = json.loads(raw)
 
-            # ── Mensaje liviano de solo video (alta frecuencia para videollamada) ──
+            # ── Mensaje liviano de video + emoción (alta frecuencia para videollamada) ──
             if data.get("type") == "frame":
-                await _notify_tutors(student_id, {
-                    "type":        "frame_update",
-                    "student_id":  student_id,
+                payload: dict = {
+                    "type":       "frame_update",
+                    "student_id": student_id,
                     "video_frame": data.get("video_frame"),
-                })
+                }
+                # El cliente puede incluir emoción y atención en el frame_update
+                # para que el tutor las vea sin necesidad de monitoring_update.
+                if data.get("emocion") is not None:
+                    payload["emocion_actual"] = data["emocion"]
+                if data.get("nivel_atencion") is not None:
+                    payload["nivel_atencion"] = data["nivel_atencion"]
+                await _notify_tutors(student_id, payload)
                 continue
 
             # ── Mensaje completo de monitoreo (cada 2s) ──

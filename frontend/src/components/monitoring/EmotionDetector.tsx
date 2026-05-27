@@ -72,6 +72,7 @@ export default function EmotionDetector({ active = false }: Props) {
   const emotionIntervalRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const emotionBufferRef      = useRef<string[]>([]);
   const currentEmotionRef     = useRef<string>("neutro"); // sin stale-closure en captureFrame
+  const currentAttentionRef   = useRef<number>(0.5);      // idem para atención
   const clickTimestampsRef    = useRef<number[]>([]);
   const mountedRef            = useRef(false);
 
@@ -392,16 +393,23 @@ export default function EmotionDetector({ active = false }: Props) {
       const counts: Record<string, number> = {};
       emotionBufferRef.current.forEach(e => { counts[e] = (counts[e] || 0) + 1; });
       const smoothed = Object.entries(counts).sort(([, a], [, b]) => b - a)[0][0];
-      currentEmotionRef.current = smoothed;
+      currentEmotionRef.current   = smoothed;
+      currentAttentionRef.current = raw.attention_level;
       setCurrentEmotion(smoothed);
       setAttentionPct(Math.round(raw.attention_level * 100));
     }, 500);
 
     // Frames con malla → tutor (4 fps)
+    // Incluye la emoción y atención actuales para que el tutor las vea
+    // sin necesidad de esperar el monitoring_update (que requiere activeSession).
     frameIntervalRef.current = setInterval(() => {
       if (!mountedRef.current || !wsRef.current) return;
       const frame = captureFrameWithMesh();
-      if (frame) wsRef.current.sendFrame(frame);
+      if (frame) wsRef.current.sendFrame(
+        frame,
+        currentEmotionRef.current,
+        currentAttentionRef.current,
+      );
     }, 250);
 
     // Datos de monitoreo → backend (cada 2 s)
