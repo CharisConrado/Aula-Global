@@ -547,15 +547,18 @@ export default function EmotionDetector({ active = false }: Props) {
                 }}
               >
                 {/* Video en vivo + overlay de malla facial */}
-                <div className="relative" style={{ aspectRatio: "4/3" }}>
+                {/* paddingTop 75% = aspecto 4:3 confiable en todos los browsers/móvil */}
+                <div className="relative" style={{ paddingTop: "75%" }}>
 
-                  {/* Video oculto — fuente del stream para drawImage y MediaPipe.
-                      En móvil, <video> en position:fixed queda negro; el canvas sí pinta. */}
+                  {/* Video: opacidad 0 pero tamaño real → el browser sigue decodificando
+                      cada frame (necesario para drawImage y readyState >= 2).
+                      Con width/height de 1 px el browser móvil detiene la decodificación. */}
                   <video
                     ref={videoRef}
                     width={320} height={240}
                     playsInline muted autoPlay
-                    style={{ position: "absolute", opacity: 0, width: 1, height: 1, pointerEvents: "none" }}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    style={{ opacity: 0, pointerEvents: "none" }}
                   />
 
                   {/* Canvas principal — recibe video + malla facial via rAF.

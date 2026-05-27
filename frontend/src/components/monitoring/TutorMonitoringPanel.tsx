@@ -57,15 +57,14 @@ export default function TutorMonitoringPanel({
       {/* Video en vivo del estudiante */}
       <div
         className="relative w-full overflow-hidden"
-        style={{ background: "#1a1a2e", aspectRatio: "4/3" }}
+        style={{ background: "#1a1a2e", paddingTop: "75%" }}
       >
         {videoFrame ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`data:image/jpeg;base64,${videoFrame}`}
             alt="Video estudiante"
-            className="w-full h-full object-cover"
-            style={{ display: "block" }}
+            className="absolute inset-0 w-full h-full object-cover"
           />
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
