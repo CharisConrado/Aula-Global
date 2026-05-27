@@ -287,6 +287,22 @@ export default function EmotionDetector({ active = false }: Props) {
     return () => stopAll();
   }, [stopAll]);
 
+  // ── Asignar stream al video DESPUÉS de que el widget se renderice ─────────
+  // El <video> vive dentro del widget que solo aparece cuando permission="granted".
+  // Cuando startMonitoring() corre (permission aún es "pending") el elemento
+  // no existe en el DOM y videoRef.current es null → el stream nunca se asigna.
+  // Este efecto corre tras el render de React, cuando videoRef.current ya apunta
+  // al elemento real.
+  useEffect(() => {
+    if (permission !== "granted") return;
+    const video  = videoRef.current;
+    const stream = streamRef.current;
+    if (video && stream && !video.srcObject) {
+      video.srcObject = stream;
+      video.play().catch(() => null);
+    }
+  }, [permission]);
+
   // ── Cargar MediaPipe FaceMesh desde CDN inyectando <script> dinámicamente ──
   // Se llama ANTES de inicializar el face mesh. Resuelve cuando el script cargó
   // (o si ya estaba cargado). Nunca rechaza — si falla, funciona sin malla.
@@ -337,11 +353,10 @@ export default function EmotionDetector({ active = false }: Props) {
     if (!mountedRef.current) { stream.getTracks().forEach(t => t.stop()); return; }
 
     streamRef.current = stream;
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play().catch(() => null);
-    }
-    setPermission("granted"); // ← widget aparece con video inmediatamente
+    // NO asignamos srcObject aquí: el <video> está dentro del widget que aún
+    // no existe en el DOM (aparece solo cuando permission cambia a "granted").
+    // El useEffect(permission) se encarga una vez que React actualice el DOM.
+    setPermission("granted"); // ← widget se renderiza → useEffect asigna stream
 
     // ── rAF draw loop: canvas como pantalla principal ──────────────────────
     // En móvil, <video> dentro de position:fixed puede quedar negro aunque la
