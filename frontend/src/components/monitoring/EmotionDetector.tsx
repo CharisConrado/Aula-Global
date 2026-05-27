@@ -544,7 +544,7 @@ export default function EmotionDetector({ active = false }: Props) {
                   <video
                     ref={videoRef}
                     width={320} height={240}
-                    playsInline muted
+                    playsInline muted autoPlay
                     className="w-full h-full object-cover block"
                     style={{ transform: "scaleX(-1)" }}
                   />
