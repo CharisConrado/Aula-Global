@@ -285,6 +285,32 @@ export default function EmotionDetector({ active = false }: Props) {
     return () => stopAll();
   }, [stopAll]);
 
+  // ── Cargar MediaPipe FaceMesh desde CDN inyectando <script> dinámicamente ──
+  // Se llama ANTES de inicializar el face mesh. Resuelve cuando el script cargó
+  // (o si ya estaba cargado). Nunca rechaza — si falla, funciona sin malla.
+  const loadFaceMeshScript = useCallback((): Promise<void> =>
+    new Promise((resolve) => {
+      // @ts-expect-error — global CDN
+      if (typeof window !== "undefined" && window.FaceMesh) { resolve(); return; }
+      // Evitar doble inyección si ya existe el script
+      if (document.querySelector('script[data-mediapipe="face_mesh"]')) {
+        // Esperar a que termine de cargar si ya fue inyectado
+        const wait = () => {
+          // @ts-expect-error
+          if (window.FaceMesh) resolve();
+          else setTimeout(wait, 100);
+        };
+        wait(); return;
+      }
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js";
+      s.setAttribute("data-mediapipe", "face_mesh");
+      s.crossOrigin = "anonymous";
+      s.onload  = () => resolve();
+      s.onerror = () => resolve(); // degradación elegante si CDN falla
+      document.head.appendChild(s);
+    }), []);
+
   // ── Iniciar cámara + WebSocket + MediaPipe ─────────────────────────────────
   const startMonitoring = useCallback(async () => {
     if (!token || !user || !active_student_id) return;
@@ -296,7 +322,7 @@ export default function EmotionDetector({ active = false }: Props) {
     );
     wsRef.current.connect();
 
-    // Solicitar cámara
+    // ── Solicitar cámara ───────────────────────────────────────────────────
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -313,108 +339,106 @@ export default function EmotionDetector({ active = false }: Props) {
       videoRef.current.srcObject = stream;
       await videoRef.current.play().catch(() => null);
     }
-    setPermission("granted");
+    setPermission("granted"); // ← widget aparece con video inmediatamente
 
-    // ── Cargar MediaPipe FaceMesh (CDN global) ────────────────────────────
-    // @ts-expect-error — global desde CDN
-    if (typeof window !== "undefined" && window.FaceMesh) {
-      // @ts-expect-error — tipo externo
-      const faceMesh = new window.FaceMesh({
-        locateFile: (file: string) =>
-          `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
-      });
-      faceMesh.setOptions({
-        maxNumFaces: 1, refineLandmarks: true,
-        minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
-      });
+    // ── Intervalos (funcionan incluso sin malla facial) ────────────────────
 
-      faceMesh.onResults((results: {
-        multiFaceLandmarks?: { x: number; y: number; z: number }[][];
-      }) => {
-        if (!mountedRef.current) return;
-        const oCanvas = overlayCanvasRef.current;
-        if (results.multiFaceLandmarks?.[0]) {
-          lastLandmarksRef.current = results.multiFaceLandmarks[0];
-          // Dibujar malla en tiempo real sobre el canvas de overlay visible
-          if (oCanvas) {
-            const oCtx = oCanvas.getContext("2d");
-            if (oCtx) {
-              oCtx.clearRect(0, 0, oCanvas.width, oCanvas.height);
-              drawFaceMesh(oCtx, results.multiFaceLandmarks[0], oCanvas.width, oCanvas.height);
-            }
-          }
-        } else {
-          // Sin rostro detectado → limpiar overlay
-          lastLandmarksRef.current = null;
-          if (oCanvas) {
-            const oCtx = oCanvas.getContext("2d");
-            if (oCtx) oCtx.clearRect(0, 0, oCanvas.width, oCanvas.height);
-          }
-        }
-      });
-
-      faceMeshRef.current = faceMesh;
-      const processFrame = async () => {
-        if (!mountedRef.current) return;
-        if (videoRef.current && faceMeshRef.current)
-          // @ts-expect-error — tipo externo
-          await faceMeshRef.current.send({ image: videoRef.current });
-        if (mountedRef.current) requestAnimationFrame(processFrame);
-      };
-      processFrame();
-    }
-
-    // ── Actualizar emoción mostrada (500 ms) con suavizado temporal ───────
-    // Toma la moda de las últimas 7 lecturas → evita parpadeo de emociones.
+    // Actualizar emoción mostrada (500 ms) con suavizado temporal
     emotionIntervalRef.current = setInterval(() => {
       if (!mountedRef.current) return;
       const lm = lastLandmarksRef.current;
       if (!lm) return;
       const raw = analyzeLandmarks(lm);
-
-      // Buffer de suavizado
       emotionBufferRef.current = [...emotionBufferRef.current.slice(-6), raw.emotion];
       const counts: Record<string, number> = {};
       emotionBufferRef.current.forEach(e => { counts[e] = (counts[e] || 0) + 1; });
       const smoothed = Object.entries(counts).sort(([, a], [, b]) => b - a)[0][0];
-
       currentEmotionRef.current = smoothed;
       setCurrentEmotion(smoothed);
       setAttentionPct(Math.round(raw.attention_level * 100));
     }, 500);
 
-    // ── Frames con malla → tutor (4 fps) ─────────────────────────────────
+    // Frames con malla → tutor (4 fps)
     frameIntervalRef.current = setInterval(() => {
       if (!mountedRef.current || !wsRef.current) return;
       const frame = captureFrameWithMesh();
       if (frame) wsRef.current.sendFrame(frame);
     }, 250);
 
-    // ── Datos de monitoreo → backend (cada 2 s) ───────────────────────────
+    // Datos de monitoreo → backend (cada 2 s)
     monitoringIntervalRef.current = setInterval(() => {
       if (!mountedRef.current || !wsRef.current || !activeSession) return;
-      const lm       = lastLandmarksRef.current;
+      const lm      = lastLandmarksRef.current;
       const analysis = lm
         ? analyzeLandmarks(lm)
         : { emotion: "neutro", attention_level: 0.5, stimming: false };
       const tactile = getClickSpeed() > 2;
       setEmotionState({
-        emocion:          currentEmotionRef.current,
-        nivel_atencion:   analysis.attention_level,
-        stimming:         analysis.stimming,
-        tactile_pressure: tactile,
+        emocion: currentEmotionRef.current, nivel_atencion: analysis.attention_level,
+        stimming: analysis.stimming, tactile_pressure: tactile,
       });
       wsRef.current.send({
-        id_session:       activeSession.id_session,
-        emotion:          currentEmotionRef.current,
-        attention_level:  analysis.attention_level,
-        stimming:         analysis.stimming,
+        id_session: activeSession.id_session, emotion: currentEmotionRef.current,
+        attention_level: analysis.attention_level, stimming: analysis.stimming,
         tactile_pressure: tactile,
       } as MonitoringData);
     }, 2000);
+
+    // ── Cargar MediaPipe FaceMesh (async, el video ya está corriendo) ──────
+    // Inyecta el <script> dinámicamente y espera que cargue.
+    // La malla facial aparece una vez que termina de descargar (~2-4 s).
+    await loadFaceMeshScript();
+    if (!mountedRef.current) return;
+
+    // @ts-expect-error — global desde CDN
+    if (typeof window === "undefined" || !window.FaceMesh) return; // CDN falló, continuar sin malla
+
+    // @ts-expect-error — tipo externo
+    const faceMesh = new window.FaceMesh({
+      locateFile: (file: string) =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+    });
+    faceMesh.setOptions({
+      maxNumFaces: 1, refineLandmarks: true,
+      minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
+    });
+
+    faceMesh.onResults((results: {
+      multiFaceLandmarks?: { x: number; y: number; z: number }[][];
+    }) => {
+      if (!mountedRef.current) return;
+      const oCanvas = overlayCanvasRef.current;
+      if (results.multiFaceLandmarks?.[0]) {
+        lastLandmarksRef.current = results.multiFaceLandmarks[0];
+        // Dibujar malla en tiempo real en el canvas visible
+        if (oCanvas) {
+          const oCtx = oCanvas.getContext("2d");
+          if (oCtx) {
+            oCtx.clearRect(0, 0, oCanvas.width, oCanvas.height);
+            drawFaceMesh(oCtx, results.multiFaceLandmarks[0], oCanvas.width, oCanvas.height);
+          }
+        }
+      } else {
+        lastLandmarksRef.current = null;
+        if (oCanvas) {
+          const oCtx = oCanvas.getContext("2d");
+          if (oCtx) oCtx.clearRect(0, 0, oCanvas.width, oCanvas.height);
+        }
+      }
+    });
+
+    faceMeshRef.current = faceMesh;
+    const processFrame = async () => {
+      if (!mountedRef.current) return;
+      if (videoRef.current && faceMeshRef.current)
+        // @ts-expect-error — tipo externo
+        await faceMeshRef.current.send({ image: videoRef.current });
+      if (mountedRef.current) requestAnimationFrame(processFrame);
+    };
+    processFrame();
   }, [
     token, user, active_student_id, activeSession,
-    analyzeLandmarks, captureFrameWithMesh, drawFaceMesh,
+    loadFaceMeshScript, analyzeLandmarks, captureFrameWithMesh, drawFaceMesh,
     getClickSpeed, handleMonitoringResponse, setEmotionState,
   ]);
 
