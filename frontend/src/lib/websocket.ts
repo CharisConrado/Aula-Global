@@ -6,6 +6,8 @@
  * Los campos coinciden exactamente con el schema del backend (MonitoringData).
  */
 
+// En producción (Render/Vercel) esta variable se configura en el dashboard
+// del hosting. En desarrollo local usa ws://localhost:8000.
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
 
 /** Datos que el cliente envía al WebSocket del estudiante */

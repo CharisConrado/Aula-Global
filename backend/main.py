@@ -32,16 +32,12 @@ app = FastAPI(
 )
 
 # --- CORS ---
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://aula-global-frontend.onrender.com",
-]
-
+# allow_origins=["*"] permite cualquier dispositivo desde cualquier red.
+# La seguridad real la proveen los JWT tokens en cada endpoint.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,   # debe ser False cuando allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
