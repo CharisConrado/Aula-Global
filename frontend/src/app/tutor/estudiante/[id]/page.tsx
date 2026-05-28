@@ -24,7 +24,6 @@ import {
   Edit3,
   Save,
   X,
-  MessageSquare,
   Stethoscope,
   User,
   Clock,
@@ -264,8 +263,6 @@ export default function TutorEstudiantePage() {
   const [savingProfile, setSavingProfile]   = useState(false);
   const [successMsg, setSuccessMsg]         = useState("");
   const [errorMsg, setErrorMsg]             = useState("");
-  const [consultLoading, setConsultLoading] = useState(false);
-
   /* ── Sesión asistida modal ── */
   const [showAssistModal,  setShowAssistModal]  = useState(false);
   const [availableProfs,   setAvailableProfs]   = useState<ProfessionalResponse[]>([]);
@@ -463,29 +460,6 @@ export default function TutorEstudiantePage() {
       loadDiagnoses();
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "No se pudo eliminar");
-    }
-  };
-
-  // ── Consult request ───────────────────────────────────────────────────────
-
-  const recentActiveSession = sessions.find((s) => s.status === "activa") ?? sessions[0] ?? null;
-
-  const handleRequestConsult = async () => {
-    if (!token || !recentActiveSession) return;
-    setConsultLoading(true);
-    setErrorMsg("");
-    try {
-      await api.requestExternalConsult(
-        token,
-        recentActiveSession.id_session,
-        "Consulta solicitada"
-      );
-      showSuccess("Consulta enviada al profesional disponible");
-    } catch (err) {
-      console.error("Error solicitando consulta:", err);
-      setErrorMsg("No se pudo enviar la consulta. Intenta de nuevo.");
-    } finally {
-      setConsultLoading(false);
     }
   };
 
@@ -1031,32 +1005,6 @@ export default function TutorEstudiantePage() {
                     );
                   })}
                 </div>
-              )}
-            </motion.div>
-
-            {/* ── Request professional consult ── */}
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, delay: 0.14 }}
-            >
-              <button
-                onClick={handleRequestConsult}
-                disabled={!recentActiveSession || consultLoading}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl font-semibold hover:bg-indigo-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                title={
-                  !recentActiveSession
-                    ? "No hay sesión activa para adjuntar la consulta"
-                    : undefined
-                }
-              >
-                <MessageSquare className="w-4 h-4 flex-shrink-0" />
-                {consultLoading ? "Enviando..." : "Solicitar consulta con profesional"}
-              </button>
-              {!recentActiveSession && (
-                <p className="text-xs text-gray-400 text-center mt-1.5">
-                  Requiere que el estudiante tenga una sesión reciente
-                </p>
               )}
             </motion.div>
 
