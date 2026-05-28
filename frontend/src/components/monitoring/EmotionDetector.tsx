@@ -3,20 +3,18 @@
 /**
  * EmotionDetector — Aula Global
  *
- * Muestra un widget visible (esquina inferior derecha) con:
- *  - Video en vivo del estudiante con efecto espejo
- *  - Malla facial de colores superpuesta en tiempo real
- *  - Emoji + etiqueta de emoción detectada (suavizada temporalmente)
- *  - Barra de nivel de atención
- *  - Estado de conexión WebSocket al tutor
- *  - Botón minimizar / restaurar
+ * Detecta emociones en segundo plano SIN mostrar ningún widget visible al estudiante
+ * (para evitar distracciones). Solo muestra el modal inicial de permiso de cámara.
  *
  * Internamente:
  *  - MediaPipe FaceMesh (CDN global window.FaceMesh)
  *  - EAR / MAR / brow furrow / smile score, todos normalizados por IOD
  *  - Buffer temporal de 7 lecturas → moda (evita parpadeo de emociones)
  *  - Canvas oculto para enviar frames con malla al tutor (4 fps)
- *  - Canvas de overlay visible para la malla en el widget (~30 fps)
+ *  - Video y canvas de overlay hidden en el DOM (necesarios para que el
+ *    browser decodifique frames y MediaPipe procese la malla correctamente)
+ *
+ * El panel del tutor recibe video + emoción en tiempo real a través del WebSocket.
  */
 
 import { useEffect, useRef, useCallback, useState } from "react";
@@ -81,14 +79,11 @@ export default function EmotionDetector({ active = false }: Props) {
   const [currentEmotion, setCurrentEmotion] = useState("neutro");
   const [wsConnected,    setWsConnected]    = useState(false);
   const [attentionPct,   setAttentionPct]   = useState(50);
-  const [minimized,      setMinimized]      = useState(false);
 
   const {
     token, user, active_student_id, activeSession,
     setEmotionState, addCrisisAlert, setPendingActions, setShowCalmingScreen,
   } = useSessionStore();
-
-  const meta = EMOTION_META[currentEmotion] ?? EMOTION_META.neutro;
 
   // ── Activar modal al iniciar actividad ──────────────────────────────────────
   useEffect(() => {
@@ -528,154 +523,39 @@ export default function EmotionDetector({ active = false }: Props) {
         )}
       </AnimatePresence>
 
-      {/* ── Widget de cámara + emoción (esquina inferior derecha) ─────────── */}
-      <AnimatePresence>
-        {permission === "granted" && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8, x: 20 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
-            exit={{ opacity: 0, scale: 0.8, x: 20 }}
-            transition={{ type: "spring", stiffness: 200, damping: 22 }}
-            className="fixed bottom-4 right-4 z-40 select-none"
-            style={{ width: minimized ? "auto" : 172 }}
-          >
-            {minimized ? (
-              /* ── Estado minimizado: píldora emoji + etiqueta ── */
-              <motion.button
-                whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
-                onClick={() => setMinimized(false)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-2xl font-bold text-sm"
-                style={{
-                  background: "white",
-                  border: `2px solid ${meta.color}66`,
-                  boxShadow: `0 4px 16px ${meta.color}33`,
-                  color: meta.color,
-                }}
-              >
-                <motion.span
-                  key={currentEmotion}
-                  initial={{ scale: 0.5 }} animate={{ scale: 1 }}
-                  className="text-xl"
-                >{meta.emoji}</motion.span>
-                <span className="text-xs font-extrabold">{meta.label}</span>
-              </motion.button>
-            ) : (
-              /* ── Widget completo ── */
-              <div
-                className="rounded-2xl overflow-hidden"
-                style={{
-                  border: `2px solid ${meta.color}55`,
-                  boxShadow: `0 8px 28px rgba(0,0,0,0.38), 0 0 0 1px ${meta.color}22`,
-                  background: "#0F172A",
-                }}
-              >
-                {/* Video en vivo + overlay de malla facial */}
-                {/* paddingTop 75% = aspecto 4:3 confiable en todos los browsers/móvil */}
-                <div className="relative" style={{ paddingTop: "75%" }}>
-
-                  {/* Video: opacidad 0 pero tamaño real → el browser sigue decodificando
-                      cada frame (necesario para drawImage y readyState >= 2).
-                      Con width/height de 1 px el browser móvil detiene la decodificación. */}
-                  <video
-                    ref={videoRef}
-                    width={320} height={240}
-                    playsInline muted autoPlay
-                    className="absolute inset-0 w-full h-full object-cover"
-                    style={{ opacity: 0, pointerEvents: "none" }}
-                  />
-
-                  {/* Canvas principal — recibe video + malla facial via rAF.
-                      scaleX(-1) = efecto espejo, igual que el video original. */}
-                  <canvas
-                    ref={overlayCanvasRef}
-                    width={320} height={240}
-                    className="absolute inset-0 w-full h-full"
-                    style={{ transform: "scaleX(-1)", pointerEvents: "none" }}
-                    aria-hidden="true"
-                  />
-
-                  {/* Badge EN VIVO */}
-                  <div
-                    className="absolute top-2 left-2 flex items-center gap-1 px-1.5 py-0.5 rounded-full"
-                    style={{ background: "rgba(239,68,68,0.85)" }}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                    <span className="text-[8px] font-extrabold text-white tracking-wider">EN VIVO</span>
-                  </div>
-
-                  {/* Botón minimizar */}
-                  <button
-                    onClick={() => setMinimized(true)}
-                    className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
-                    style={{ background: "rgba(0,0,0,0.55)" }}
-                    aria-label="Minimizar"
-                  >✕</button>
-
-                  {/* Gradiente inferior (para legibilidad del texto) */}
-                  <div
-                    className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none"
-                    style={{ background: "linear-gradient(to top, rgba(0,0,0,0.80) 0%, transparent 100%)" }}
-                  />
-
-                  {/* Emoción detectada */}
-                  <div className="absolute bottom-2 left-2 right-2 flex items-center gap-2">
-                    <motion.div
-                      key={currentEmotion}
-                      initial={{ scale: 0.5, rotate: -10 }}
-                      animate={{ scale: 1, rotate: 0 }}
-                      transition={{ type: "spring", stiffness: 300 }}
-                      className="text-2xl leading-none flex-shrink-0"
-                    >{meta.emoji}</motion.div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[9px] font-bold text-white/50 uppercase tracking-widest leading-none mb-0.5">
-                        Cómo me siento
-                      </p>
-                      <motion.p
-                        key={currentEmotion}
-                        initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-                        className="text-xs font-extrabold leading-none"
-                        style={{ color: meta.color }}
-                      >{meta.label}</motion.p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Barra de atención + estado WS */}
-                <div className="px-2.5 py-2" style={{ background: "#111827" }}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "#475569" }}>
-                      Atención
-                    </span>
-                    <span
-                      className="text-[9px] font-extrabold"
-                      style={{ color: attentionPct > 60 ? "#34D399" : attentionPct > 30 ? "#FBBF24" : "#F87171" }}
-                    >{attentionPct}%</span>
-                  </div>
-                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#1E293B" }}>
-                    <motion.div
-                      className="h-full rounded-full"
-                      animate={{ width: `${attentionPct}%` }}
-                      transition={{ type: "spring", stiffness: 80, damping: 20 }}
-                      style={{
-                        background: attentionPct > 60 ? "#34D399" : attentionPct > 30 ? "#FBBF24" : "#F87171",
-                      }}
-                    />
-                  </div>
-                  <div className="flex items-center gap-1 mt-1.5">
-                    <span
-                      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                      style={{ background: wsConnected ? "#22C55E" : "#475569" }}
-                    />
-                    <span className="text-[8px] font-semibold" style={{ color: wsConnected ? "#22C55E" : "#475569" }}>
-                      {wsConnected ? "Conectado al tutor" : "Reconectando…"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ── Elementos de captura — completamente fuera de pantalla ── */}
+      {/* Posicionados en top:-9999px para que el browser los decodifique
+          (necesita dimensiones reales) pero nunca sean visibles al estudiante.
+          NO usar display:none ni opacity:0 — algunos browsers GPU-acelerados
+          pueden mostrar el video a través de esas propiedades CSS. */}
+      {permission === "granted" && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "fixed",
+            top: -9999,
+            left: -9999,
+            width: 320,
+            height: 240,
+            overflow: "hidden",
+            pointerEvents: "none",
+          }}
+        >
+          <video
+            ref={videoRef}
+            width={320} height={240}
+            playsInline muted autoPlay
+            disablePictureInPicture
+            tabIndex={-1}
+            style={{ width: 320, height: 240 }}
+          />
+          <canvas
+            ref={overlayCanvasRef}
+            width={320} height={240}
+            style={{ position: "absolute", top: 0, left: 0 }}
+          />
+        </div>
+      )}
 
       {/* Canvas oculto — solo para captura de frames con malla y envío al tutor */}
       <canvas ref={canvasRef} width={320} height={240} style={{ display: "none" }} aria-hidden="true" />
