@@ -17,6 +17,7 @@ import {
   type SessionResponse,
   type DegreeResponse,
   type DiagnosisResponse,
+  type ProfessionalResponse,
 } from "@/lib/api";
 import {
   ArrowLeft,
@@ -24,7 +25,7 @@ import {
   Save,
   X,
   MessageSquare,
-  Play,
+  Stethoscope,
   User,
   Clock,
   AlertTriangle,
@@ -35,7 +36,16 @@ import {
   ExternalLink,
   Plus,
   Loader2,
+  Send,
 } from "lucide-react";
+
+const SPECIALTY_EMOJI: Record<string, string> = {
+  "Psicólogo Clínico":     "🧠",
+  "Psiquiatra":            "🩺",
+  "Neuropsicólogo":        "🔬",
+  "Terapeuta Ocupacional": "🤝",
+  "Logopeda":              "💬",
+};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -240,7 +250,7 @@ export default function TutorEstudiantePage() {
   const params = useParams();
   const studentId = params.id as string;
 
-  const { token, user, setActiveStudentId, _hasHydrated } = useSessionStore();
+  const { token, user, _hasHydrated } = useSessionStore();
 
   const [student, setStudent]     = useState<StudentResponse | null>(null);
   const [profile, setProfile]     = useState<ProfileResponse | null>(null);
@@ -255,6 +265,15 @@ export default function TutorEstudiantePage() {
   const [successMsg, setSuccessMsg]         = useState("");
   const [errorMsg, setErrorMsg]             = useState("");
   const [consultLoading, setConsultLoading] = useState(false);
+
+  /* ── Sesión asistida modal ── */
+  const [showAssistModal,  setShowAssistModal]  = useState(false);
+  const [availableProfs,   setAvailableProfs]   = useState<ProfessionalResponse[]>([]);
+  const [loadingProfs,     setLoadingProfs]     = useState(false);
+  const [selectedProfId,   setSelectedProfId]   = useState("");
+  const [assistNotes,      setAssistNotes]      = useState("");
+  const [assistSubmitting, setAssistSubmitting] = useState(false);
+  const [assistBanner,     setAssistBanner]     = useState<{ type: "ok" | "err"; msg: string } | null>(null);
 
   /* ── Diagnósticos ── */
   const [diagnoses, setDiagnoses] = useState<DiagnosisResponse[]>([]);
@@ -470,12 +489,44 @@ export default function TutorEstudiantePage() {
     }
   };
 
-  // ── Launch assisted session ───────────────────────────────────────────────
+  // ── Open assisted-session request modal ──────────────────────────────────
 
-  const handleLaunchSession = () => {
-    if (!student) return;
-    setActiveStudentId(student.id_student);
-    router.push("/estudiante");
+  const handleOpenAssistModal = async () => {
+    setSelectedProfId(""); setAssistNotes(""); setAssistBanner(null);
+    setShowAssistModal(true);
+    setLoadingProfs(true);
+    try {
+      const profs = await api.getAvailableProfessionals(token!);
+      setAvailableProfs(profs || []);
+    } catch {
+      setAvailableProfs([]);
+    } finally {
+      setLoadingProfs(false);
+    }
+  };
+
+  const handleSubmitAssist = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !user || !student || !selectedProfId) return;
+    setAssistSubmitting(true);
+    setAssistBanner(null);
+    try {
+      await api.requestAssistedSession(token, {
+        id_tutor:        user.user_id,
+        id_professional: selectedProfId,
+        id_student:      student.id_student,
+        notes:           assistNotes.trim() || undefined,
+      });
+      setAssistBanner({ type: "ok", msg: "¡Solicitud enviada! El profesional recibirá la notificación." });
+      setTimeout(() => {
+        setShowAssistModal(false);
+        setSelectedProfId(""); setAssistNotes(""); setAssistBanner(null);
+      }, 1800);
+    } catch (err) {
+      setAssistBanner({ type: "err", msg: err instanceof Error ? err.message : "Error al enviar la solicitud" });
+    } finally {
+      setAssistSubmitting(false);
+    }
   };
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -1009,18 +1060,19 @@ export default function TutorEstudiantePage() {
               )}
             </motion.div>
 
-            {/* ── Launch assisted session ── */}
+            {/* ── Request assisted session ── */}
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, delay: 0.18 }}
             >
               <button
-                onClick={handleLaunchSession}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3.5 bg-primary-600 hover:bg-primary-700 active:scale-[0.98] text-white rounded-xl font-bold shadow-md hover:shadow-lg transition-all"
+                onClick={handleOpenAssistModal}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3.5 active:scale-[0.98] text-white rounded-xl font-bold shadow-md hover:shadow-lg transition-all"
+                style={{ background: "linear-gradient(135deg,#7FB3D5,#4587a9)", boxShadow: "0 4px 16px rgba(127,179,213,0.35)" }}
               >
-                <Play className="w-4 h-4 flex-shrink-0" />
-                Iniciar sesión asistida 🚀
+                <Stethoscope className="w-4 h-4 flex-shrink-0" />
+                Solicitar sesión asistida
               </button>
             </motion.div>
           </div>
@@ -1155,6 +1207,152 @@ export default function TutorEstudiantePage() {
 
         </div>
       </main>
+
+      {/* ══════════════════ MODAL: SESIÓN ASISTIDA ══════════════════ */}
+      <AnimatePresence>
+        {showAssistModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 flex items-center justify-center z-50 px-4 py-8 overflow-y-auto"
+            style={{ background: "rgba(52,73,94,0.50)", backdropFilter: "blur(4px)" }}
+            onClick={() => !assistSubmitting && setShowAssistModal(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: "spring", stiffness: 280, damping: 22 }}
+              className="rounded-3xl p-7 w-full max-w-lg relative"
+              style={{ background: "white", boxShadow: "0 12px 50px rgba(52,73,94,0.22)" }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xl"
+                    style={{ background: "#E1EFFF" }}>🩺</div>
+                  <div>
+                    <h2 className="font-extrabold text-base" style={{ color: "#34495E" }}>
+                      Solicitar sesión asistida
+                    </h2>
+                    <p className="text-xs" style={{ color: "#a0aec0" }}>
+                      Estudiante: <strong style={{ color: "#4587a9" }}>{student?.full_name}</strong>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => !assistSubmitting && setShowAssistModal(false)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center"
+                  style={{ background: "#f3f4f6", color: "#7f8c8d" }}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Banner */}
+              {assistBanner && (
+                <div
+                  className="rounded-xl px-4 py-3 text-sm font-semibold mb-4 flex items-center gap-2"
+                  style={assistBanner.type === "ok"
+                    ? { background: "#F0FDF4", color: "#15803D", border: "1px solid #86EFAC" }
+                    : { background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FCA5A5" }}
+                >
+                  {assistBanner.type === "ok" ? "✅" : "⚠️"} {assistBanner.msg}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmitAssist} className="space-y-5">
+
+                {/* Professional selector */}
+                <div>
+                  <label className="text-sm font-bold block mb-2" style={{ color: "#34495E" }}>
+                    Especialista disponible <span style={{ color: "#FFB37B" }}>*</span>
+                  </label>
+                  {loadingProfs ? (
+                    <div className="flex items-center justify-center py-6">
+                      <Loader2 className="w-6 h-6 animate-spin" style={{ color: "#7FB3D5" }} />
+                    </div>
+                  ) : availableProfs.length === 0 ? (
+                    <div className="rounded-xl p-4 text-sm text-center"
+                      style={{ background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FCA5A5" }}>
+                      No hay especialistas disponibles en este momento.<br />
+                      <span className="text-xs opacity-75">Deben estar aprobados y sin sesión activa.</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {availableProfs.map(p => (
+                        <button
+                          key={p.id_professional}
+                          type="button"
+                          onClick={() => setSelectedProfId(p.id_professional)}
+                          className="w-full text-left rounded-xl p-3.5 flex items-center gap-3 transition-all"
+                          style={selectedProfId === p.id_professional
+                            ? { background: "#E1EFFF", border: "2px solid #7FB3D5" }
+                            : { background: "#f9fafb", border: "1.5px solid #D5DBDB" }}
+                        >
+                          <span className="text-xl flex-shrink-0">
+                            {SPECIALTY_EMOJI[p.speciality] || "🩺"}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="font-bold text-sm truncate" style={{ color: "#34495E" }}>
+                              {p.full_name}
+                            </p>
+                            <p className="text-xs" style={{ color: "#7f8c8d" }}>
+                              {p.speciality || "Especialista"}
+                              {p.license_number ? ` · ${p.license_number}` : ""}
+                            </p>
+                          </div>
+                          {selectedProfId === p.id_professional && (
+                            <span className="ml-auto text-lg flex-shrink-0" style={{ color: "#4587a9" }}>✓</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="text-sm font-bold block mb-2" style={{ color: "#34495E" }}>
+                    Notas para el profesional
+                    <span className="font-normal ml-1" style={{ color: "#a0aec0" }}>(opcional)</span>
+                  </label>
+                  <textarea
+                    value={assistNotes}
+                    onChange={e => setAssistNotes(e.target.value)}
+                    placeholder="Describe brevemente el motivo de la consulta o el comportamiento observado…"
+                    rows={3}
+                    style={{
+                      width: "100%", border: "1.5px solid #D5DBDB", borderRadius: "0.75rem",
+                      padding: "0.75rem 1rem", fontSize: "0.875rem", outline: "none",
+                      color: "#34495E", background: "white", resize: "vertical",
+                    }}
+                  />
+                </div>
+
+                {/* Submit */}
+                <button
+                  type="submit"
+                  disabled={assistSubmitting || !selectedProfId || loadingProfs}
+                  className="w-full py-3.5 rounded-2xl font-extrabold text-white flex items-center justify-center gap-2 transition-all"
+                  style={{
+                    background: (assistSubmitting || !selectedProfId || loadingProfs)
+                      ? "#D5DBDB"
+                      : "linear-gradient(135deg,#7FB3D5,#4587a9)",
+                    cursor: (assistSubmitting || !selectedProfId || loadingProfs) ? "not-allowed" : "pointer",
+                    boxShadow: (assistSubmitting || !selectedProfId || loadingProfs)
+                      ? "none" : "0 4px 18px rgba(127,179,213,0.40)",
+                  }}
+                >
+                  {assistSubmitting
+                    ? <><Loader2 className="w-5 h-5 animate-spin" /> Enviando…</>
+                    : <><Send className="w-5 h-5" /> Enviar solicitud</>}
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ══════════════════ MODAL: SUBIR DIAGNÓSTICO ══════════════════ */}
       {showDiagModal && (
