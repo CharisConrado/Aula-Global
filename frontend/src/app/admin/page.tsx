@@ -29,6 +29,10 @@ import {
   BarChart3,
   Search,
   Menu,
+  Eye,
+  CheckCircle2,
+  XCircle,
+  Clock,
 } from "lucide-react";
 import Image from "next/image";
 import ReportsPanel from "@/components/admin/ReportsPanel";
@@ -338,6 +342,8 @@ export default function AdminPage() {
   });
   const [profBanner, setProfBanner] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
   const [profSubmitting, setProfSubmitting] = useState(false);
+  const [viewingProf, setViewingProf] = useState<ProfessionalResponse | null>(null);
+  const [verifyingProf, setVerifyingProf] = useState(false);
 
   /* ── Tab: estudiantes ── */
   const [students, setStudents] = useState<StudentResponse[]>([]);
@@ -543,6 +549,20 @@ export default function AdminPage() {
       setProfBanner({ type: "err", msg: err instanceof Error ? err.message : "Error" });
     } finally {
       setProfSubmitting(false);
+    }
+  };
+
+  const handleVerifyProf = async (p: ProfessionalResponse, status: "aprobado" | "rechazado" | "pendiente") => {
+    if (!token) return;
+    setVerifyingProf(true);
+    try {
+      const updated = await api.updateProfessional(token, p.id_professional, { verification_status: status });
+      setProfessionals((prev) => prev.map((x) => x.id_professional === updated.id_professional ? updated : x));
+      setViewingProf(updated);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Error al actualizar estado");
+    } finally {
+      setVerifyingProf(false);
     }
   };
 
@@ -1142,6 +1162,10 @@ export default function AdminPage() {
                           </div>
                         </div>
                         <div className="flex gap-2 pt-3" style={{ borderTop: "1.5px dashed #D5DBDB" }}>
+                          <button onClick={() => setViewingProf(p)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold"
+                            style={{ background: "#F0FDF4", color: "#15803D" }}>
+                            <Eye className="w-3.5 h-3.5" />Ver
+                          </button>
                           <button onClick={() => openEditProf(p)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold"
                             style={{ background: "#E1EFFF", color: "#4587a9" }}>
                             <Pencil className="w-3.5 h-3.5" />Editar
@@ -1481,6 +1505,124 @@ export default function AdminPage() {
           </button>
         </form>
       </Modal>
+
+      {/* ══════════════════ MODAL: PERFIL PROFESIONAL ══════════════════ */}
+      {viewingProf && (
+        <div
+          onClick={() => setViewingProf(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(52,73,94,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "white", borderRadius: "1.5rem", width: "100%", maxWidth: 480, boxShadow: "0 20px 60px rgba(52,73,94,0.22)", overflow: "hidden" }}
+          >
+            {/* Header con avatar */}
+            <div className="px-6 pt-6 pb-5 flex items-center gap-4"
+              style={{ background: "linear-gradient(135deg,#E1EFFF,#f0f7ff)", borderBottom: "1.5px solid #D5DBDB" }}>
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-black text-white flex-shrink-0"
+                style={{ background: "linear-gradient(135deg,#7FB3D5,#4587a9)" }}>
+                {viewingProf.full_name.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-base font-extrabold leading-tight" style={{ color: "#34495E" }}>{viewingProf.full_name}</h2>
+                <p className="text-sm mt-0.5" style={{ color: "#7f8c8d" }}>{viewingProf.email}</p>
+                {viewingProf.speciality && (
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full inline-block mt-1.5"
+                    style={{ background: "#FFE4D4", color: "#c9591e" }}>
+                    {viewingProf.speciality}
+                  </span>
+                )}
+              </div>
+              <button onClick={() => setViewingProf(null)}
+                className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "#f0f4f7", color: "#7f8c8d" }}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Datos */}
+            <div className="px-6 py-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl p-3" style={{ background: "#F8FAFC", border: "1.5px solid #E5E7EB" }}>
+                  <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "#a0aec0" }}>Licencia</p>
+                  <p className="text-sm font-bold font-mono" style={{ color: "#34495E" }}>{viewingProf.license_number || "—"}</p>
+                </div>
+                <div className="rounded-xl p-3" style={{ background: "#F8FAFC", border: "1.5px solid #E5E7EB" }}>
+                  <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "#a0aec0" }}>Teléfono</p>
+                  <p className="text-sm font-bold" style={{ color: "#34495E" }}>{viewingProf.phone || "—"}</p>
+                </div>
+              </div>
+
+              {/* Estado de verificación */}
+              <div className="rounded-xl p-4" style={{
+                background: viewingProf.verification_status === "aprobado" ? "#F0FDF4" :
+                            viewingProf.verification_status === "rechazado" ? "#FEF2F2" : "#FEFCE8",
+                border: `1.5px solid ${viewingProf.verification_status === "aprobado" ? "#86EFAC" :
+                                        viewingProf.verification_status === "rechazado" ? "#FCA5A5" : "#FDE047"}`,
+              }}>
+                <div className="flex items-center gap-2 mb-1">
+                  {viewingProf.verification_status === "aprobado"  && <CheckCircle2 className="w-4 h-4" style={{ color: "#16a34a" }} />}
+                  {viewingProf.verification_status === "rechazado" && <XCircle      className="w-4 h-4" style={{ color: "#dc2626" }} />}
+                  {viewingProf.verification_status === "pendiente" && <Clock        className="w-4 h-4" style={{ color: "#ca8a04" }} />}
+                  <p className="text-xs font-bold uppercase tracking-wide" style={{
+                    color: viewingProf.verification_status === "aprobado" ? "#16a34a" :
+                           viewingProf.verification_status === "rechazado" ? "#dc2626" : "#ca8a04"
+                  }}>
+                    {viewingProf.verification_status === "aprobado"  ? "Profesional aprobado" :
+                     viewingProf.verification_status === "rechazado" ? "Profesional rechazado" :
+                     "Verificación pendiente"}
+                  </p>
+                </div>
+                <p className="text-xs" style={{ color: "#7f8c8d" }}>
+                  {viewingProf.verification_status === "aprobado"  ? "Este profesional puede atender sesiones asistidas." :
+                   viewingProf.verification_status === "rechazado" ? "Este profesional no tiene acceso a sesiones asistidas." :
+                   "Revisa los datos y aprueba o rechaza al profesional."}
+                </p>
+              </div>
+
+              {/* Botones de acción */}
+              <div className="flex gap-3 pt-1">
+                {viewingProf.verification_status !== "aprobado" && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                    onClick={() => handleVerifyProf(viewingProf, "aprobado")}
+                    disabled={verifyingProf}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white"
+                    style={{ background: verifyingProf ? "#86efac" : "linear-gradient(135deg,#22c55e,#16a34a)", boxShadow: "0 4px 14px rgba(34,197,94,0.35)" }}>
+                    {verifyingProf ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                    Aprobar
+                  </motion.button>
+                )}
+                {viewingProf.verification_status !== "rechazado" && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                    onClick={() => handleVerifyProf(viewingProf, "rechazado")}
+                    disabled={verifyingProf}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white"
+                    style={{ background: verifyingProf ? "#fca5a5" : "linear-gradient(135deg,#ef4444,#dc2626)", boxShadow: "0 4px 14px rgba(239,68,68,0.30)" }}>
+                    {verifyingProf ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                    Rechazar
+                  </motion.button>
+                )}
+                {viewingProf.verification_status !== "pendiente" && (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                    onClick={() => handleVerifyProf(viewingProf, "pendiente")}
+                    disabled={verifyingProf}
+                    className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold"
+                    style={{ background: "#FEFCE8", border: "1.5px solid #FDE047", color: "#ca8a04" }}>
+                    <Clock className="w-4 h-4" />
+                    Pendiente
+                  </motion.button>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
     </div>
   );
 }
