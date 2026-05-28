@@ -41,8 +41,9 @@ async def profesionales_disponibles(
     cu: TokenData = Depends(require_role(RolUsuario.tutor, RolUsuario.admin)),
 ):
     """
-    Devuelve los profesionales activos que NO tienen una sesión asistida
-    pendiente, aceptada o en_curso. Si la tabla aún no existe, devuelve todos.
+    Devuelve los profesionales aprobados y activos que NO tienen una sesión
+    asistida pendiente, aceptada o en_curso. Si la tabla aún no existe, devuelve
+    todos los aprobados.
     """
     try:
         rows = db.execute(text("""
@@ -50,6 +51,7 @@ async def profesionales_disponibles(
                    phone, verification_status, is_active, created_at
             FROM professional
             WHERE is_active = true
+              AND verification_status = 'aprobado'
               AND id_professional NOT IN (
                   SELECT id_professional
                   FROM sesion_asistida
@@ -64,6 +66,7 @@ async def profesionales_disponibles(
                    phone, verification_status, is_active, created_at
             FROM professional
             WHERE is_active = true
+              AND verification_status = 'aprobado'
             ORDER BY speciality ASC, full_name ASC
         """)).fetchall()
     return [_row_to_prof(r) for r in rows]
