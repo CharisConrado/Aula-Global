@@ -377,7 +377,7 @@ async def admin_create_professional(
         row = db.execute(
             text("""
                 INSERT INTO professional (full_name, license_number, speciality, email, phone, is_active, verification_status)
-                VALUES (:full_name, :license_number, :speciality, :email, :phone, true, 'aprobado')
+                VALUES (:full_name, :license_number, :speciality, :email, :phone, true, 'pendiente')
                 RETURNING id_professional, full_name, email, license_number, speciality, phone, verification_status, is_active, created_at
             """),
             {
