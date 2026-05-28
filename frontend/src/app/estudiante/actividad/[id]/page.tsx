@@ -19,6 +19,7 @@ const ArteCanvas      = dynamic(() => import("@/components/activities/ArteCanvas
 const EmparejarGame   = dynamic(() => import("@/components/activities/EmparejarGame"),               { ssr: false });
 const VideoUpload     = dynamic(() => import("@/components/activities/VideoUpload"),                  { ssr: false });
 const ArchivoUpload   = dynamic(() => import("@/components/activities/ArchivoUpload"),               { ssr: false });
+const CompletarGame   = dynamic(() => import("@/components/activities/CompletarGame"),               { ssr: false });
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface QuizQuestion {
@@ -580,10 +581,26 @@ export default function ActividadPage() {
             )}
 
             {/* ══════════════════════════════════════════════════════════════
+                COMPLETAR → Rellenar el hueco
+            ══════════════════════════════════════════════════════════════ */}
+            {!completed && kind === "completar" && (
+              <motion.div key="completar" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+                <CompletarGame
+                  oraciones={
+                    (activity.content?.oraciones as { texto: string; respuesta: string }[]) || []
+                  }
+                  instruccion={(activity.content?.instruccion as string) || undefined}
+                  isHighContrast={isHighContrast}
+                  onComplete={(nota) => finishActivity(nota)}
+                />
+              </motion.div>
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════
                 FALLBACK — generic completion (shouldn't be needed after seed)
             ══════════════════════════════════════════════════════════════ */}
             {!completed &&
-              !["dibujo","video_upload","quiz","emparejar","ejercicio_archivo"].includes(kind) && (
+              !["dibujo","video_upload","quiz","emparejar","ejercicio_archivo","completar"].includes(kind) && (
               <motion.div key="gen" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 className="card-kid text-center py-10 max-w-2xl mx-auto"
               >
