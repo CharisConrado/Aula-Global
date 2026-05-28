@@ -499,6 +499,48 @@ export const api = {
       { token }
     ),
 
+  // ── Assisted Sessions ────────────────────────────────────────────────────
+  requestAssistedSession: (
+    token: string,
+    data: { id_tutor: string; id_professional: string; id_student: string; notes?: string }
+  ) =>
+    apiFetch<AssistedSessionResponse>("/api/assisted-sessions", {
+      method: "POST",
+      body: data,
+      token,
+    }),
+
+  getAssistedSessions: (token: string) =>
+    apiFetch<AssistedSessionResponse[]>("/api/assisted-sessions", { token }),
+
+  acceptAssistedSession: (token: string, sessionId: string) =>
+    apiFetch<AssistedSessionResponse>(`/api/assisted-sessions/${sessionId}/accept`, {
+      method: "PUT",
+      token,
+    }),
+
+  sendSessionLink: (token: string, sessionId: string, meeting_link: string) =>
+    apiFetch<AssistedSessionResponse>(`/api/assisted-sessions/${sessionId}/send-link`, {
+      method: "PUT",
+      body: { meeting_link },
+      token,
+    }),
+
+  closeAssistedSession: (token: string, sessionId: string) =>
+    apiFetch<AssistedSessionResponse>(`/api/assisted-sessions/${sessionId}/close`, {
+      method: "PUT",
+      token,
+    }),
+
+  rejectAssistedSession: (token: string, sessionId: string) =>
+    apiFetch<AssistedSessionResponse>(`/api/assisted-sessions/${sessionId}/reject`, {
+      method: "PUT",
+      token,
+    }),
+
+  getAvailableProfessionals: (token: string) =>
+    apiFetch<ProfessionalResponse[]>("/api/professionals/available", { token }),
+
   // ── Interventions ─────────────────────────────────────────────────────────
   createIntervention: (token: string, data: InterventionCreate) =>
     apiFetch<InterventionResponse>("/api/interventions", {
@@ -796,4 +838,23 @@ export interface MonitoringHistoryEntry {
   tactile_pressure: boolean;
   action_taken: string;
   detected_at: string;
+}
+
+export interface AssistedSessionResponse {
+  id_sesion_asistida:      string;
+  id_tutor:                string;
+  id_professional:         string;
+  id_student:              string;
+  /** pendiente | aceptada | en_curso | finalizada | rechazada */
+  status:                  string;
+  notes:                   string | null;
+  meeting_link:            string | null;
+  requested_at:            string | null;
+  accepted_at:             string | null;
+  closed_at:               string | null;
+  created_at:              string | null;
+  tutor_name:              string | null;
+  professional_name:       string | null;
+  student_name:            string | null;
+  professional_speciality: string | null;
 }

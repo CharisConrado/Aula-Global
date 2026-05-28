@@ -1406,8 +1406,17 @@ export default function AdminPage() {
               icon={<Lock className="w-4 h-4" />} minLength={6}
               value={newProf.password} onChange={(e) => setNewProf({ ...newProf, password: e.target.value })} />
           )}
-          <StyledInput label="Especialidad" type="text" placeholder="Psicólogo / Terapeuta / Pedagogo"
-            value={newProf.speciality} onChange={(e) => setNewProf({ ...newProf, speciality: e.target.value })} />
+          <StyledSelect label="Especialidad" required
+            value={newProf.speciality}
+            onChange={(e) => setNewProf({ ...newProf, speciality: e.target.value })}
+            options={[
+              { value: "",                      label: "— Seleccionar especialidad —" },
+              { value: "Psicólogo Clínico",      label: "Psicólogo Clínico" },
+              { value: "Psiquiatra",             label: "Psiquiatra" },
+              { value: "Neuropsicólogo",         label: "Neuropsicólogo" },
+              { value: "Terapeuta Ocupacional",  label: "Terapeuta Ocupacional" },
+              { value: "Logopeda",               label: "Logopeda" },
+            ]} />
           <StyledInput label="Número de licencia" type="text" placeholder="Opcional"
             value={newProf.license_number} onChange={(e) => setNewProf({ ...newProf, license_number: e.target.value })} />
           <StyledInput label="Teléfono" type="text" placeholder="Opcional" icon={<Phone className="w-4 h-4" />}

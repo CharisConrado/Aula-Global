@@ -11,6 +11,8 @@ import {
   type CrisisResponse,
   type SessionResponse,
   type StudentActivityResponse,
+  type AssistedSessionResponse,
+  type ProfessionalResponse,
 } from "@/lib/api";
 import {
   TutorMonitoringWebSocket,
@@ -27,6 +29,11 @@ import {
   Trash2,
   ChevronRight,
   Menu,
+  Stethoscope,
+  Send,
+  ExternalLink,
+  Loader2,
+  X,
 } from "lucide-react";
 
 /* ── ID compuesto del estudiante ────────────────────────────── */
@@ -82,7 +89,24 @@ interface LiveSession {
   activityCount: number;
 }
 
-type NavTab = "estudiantes" | "crisis" | "historial";
+type NavTab = "estudiantes" | "crisis" | "historial" | "sesion_asistida";
+
+// ── Status badge config ───────────────────────────────────────────────────────
+const ASST_STATUS: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  pendiente:  { label: "⏳ Pendiente",       color: "#D97706", bg: "#FFFBEB", border: "#FCD34D" },
+  aceptada:   { label: "✅ Aceptada",        color: "#1D4ED8", bg: "#EFF6FF", border: "#93C5FD" },
+  en_curso:   { label: "🟢 En curso",        color: "#15803D", bg: "#F0FDF4", border: "#86EFAC" },
+  finalizada: { label: "🏁 Finalizada",      color: "#6B7280", bg: "#F9FAFB", border: "#D1D5DB" },
+  rechazada:  { label: "❌ Rechazada",       color: "#B91C1C", bg: "#FEF2F2", border: "#FCA5A5" },
+};
+
+const SPECIALTY_EMOJI: Record<string, string> = {
+  "Psicólogo Clínico":     "🧠",
+  "Psiquiatra":            "🩺",
+  "Neuropsicólogo":        "🔬",
+  "Terapeuta Ocupacional": "🤝",
+  "Logopeda":              "💬",
+};
 
 /* ════════════════════════════════════════════════════════════════ */
 export default function TutorPage() {
@@ -106,6 +130,19 @@ export default function TutorPage() {
   const [loadingSessions, setLoadingSessions] = useState<string | null>(null);
   const [sessionActivities, setSessionActivities] = useState<Record<string, StudentActivityResponse[]>>({});
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
+
+  /* ── Sesión asistida ── */
+  const [assistedSessions,    setAssistedSessions]    = useState<AssistedSessionResponse[]>([]);
+  const [availableProfs,      setAvailableProfs]      = useState<ProfessionalResponse[]>([]);
+  const [assistedLoaded,      setAssistedLoaded]      = useState(false);
+  const [assistedLoading,     setAssistedLoading]     = useState(false);
+  const [showRequestModal,    setShowRequestModal]    = useState(false);
+  const [reqProfId,           setReqProfId]           = useState("");
+  const [reqStudentId,        setReqStudentId]        = useState("");
+  const [reqNotes,            setReqNotes]            = useState("");
+  const [reqSubmitting,       setReqSubmitting]       = useState(false);
+  const [reqBanner,           setReqBanner]           = useState<{ type: "ok" | "err"; msg: string } | null>(null);
+  const [closingId,           setClosingId]           = useState<string | null>(null);
 
   /* ── Carga inicial ── */
   const loadData = useCallback(async () => {
@@ -188,6 +225,72 @@ export default function TutorPage() {
       setExpandedSession(prev => prev === sessionId ? null : sessionId);
     } catch {}
   }, [token, sessionActivities]);
+
+  /* ── loadAssistedSessions ── */
+  const loadAssistedSessions = useCallback(async () => {
+    if (!token) return;
+    setAssistedLoading(true);
+    try {
+      const [sessions, profs] = await Promise.all([
+        api.getAssistedSessions(token),
+        api.getAvailableProfessionals(token),
+      ]);
+      setAssistedSessions(sessions || []);
+      setAvailableProfs(profs || []);
+      setAssistedLoaded(true);
+    } catch (err) {
+      console.error("Error cargando sesiones asistidas:", err);
+    } finally {
+      setAssistedLoading(false);
+    }
+  }, [token]);
+
+  /* ── load sesión asistida cuando se activa el tab ── */
+  useEffect(() => {
+    if (tab === "sesion_asistida" && !assistedLoaded) {
+      loadAssistedSessions();
+    }
+  }, [tab, assistedLoaded, loadAssistedSessions]);
+
+  /* ── handleRequestSession ── */
+  const handleRequestSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !user || !reqProfId || !reqStudentId) return;
+    setReqSubmitting(true);
+    setReqBanner(null);
+    try {
+      const created = await api.requestAssistedSession(token, {
+        id_tutor:        user.user_id,
+        id_professional: reqProfId,
+        id_student:      reqStudentId,
+        notes:           reqNotes.trim() || undefined,
+      });
+      setAssistedSessions(prev => [created, ...prev]);
+      setReqBanner({ type: "ok", msg: "Solicitud enviada exitosamente 🎉" });
+      setTimeout(() => {
+        setShowRequestModal(false);
+        setReqProfId(""); setReqStudentId(""); setReqNotes(""); setReqBanner(null);
+      }, 1500);
+    } catch (err) {
+      setReqBanner({ type: "err", msg: err instanceof Error ? err.message : "Error al enviar la solicitud" });
+    } finally {
+      setReqSubmitting(false);
+    }
+  };
+
+  /* ── handleCloseAssisted ── */
+  const handleCloseAssisted = async (sessionId: string) => {
+    if (!token) return;
+    setClosingId(sessionId);
+    try {
+      const updated = await api.closeAssistedSession(token, sessionId);
+      setAssistedSessions(prev => prev.map(s => s.id_sesion_asistida === sessionId ? updated : s));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setClosingId(null);
+    }
+  };
 
   /* ── formatDuration ── */
   const formatDuration = (startTime: string | null): string => {
@@ -341,9 +444,15 @@ export default function TutorPage() {
   /* NAV ITEMS                                                        */
   /* ────────────────────────────────────────────────────────────── */
   const navItems: { id: NavTab; label: string; icon: React.ReactNode; badge?: number }[] = [
-    { id: "estudiantes", label: "Mis Estudiantes", icon: <Users className="w-5 h-5" />, badge: students.length },
-    { id: "crisis",      label: "Crisis",          icon: <AlertTriangle className="w-5 h-5" />, badge: activeCrisis.length },
-    { id: "historial",   label: "Historial",       icon: <Activity className="w-5 h-5" /> },
+    { id: "estudiantes",   label: "Mis Estudiantes",  icon: <Users className="w-5 h-5" />,       badge: students.length },
+    { id: "crisis",        label: "Crisis",            icon: <AlertTriangle className="w-5 h-5" />, badge: activeCrisis.length },
+    { id: "historial",     label: "Historial",         icon: <Activity className="w-5 h-5" /> },
+    {
+      id:    "sesion_asistida",
+      label: "Sesión Asistida",
+      icon:  <Stethoscope className="w-5 h-5" />,
+      badge: assistedSessions.filter(s => s.status === "en_curso").length || undefined,
+    },
   ];
 
   /* ────────────────────────────────────────────────────────────── */
@@ -481,14 +590,16 @@ export default function TutorPage() {
             </button>
             <div>
             <h1 className="text-lg md:text-xl font-extrabold" style={{ color: "#34495E" }}>
-              {tab === "estudiantes" && "Mis Estudiantes"}
-              {tab === "crisis"      && "Crisis Activas"}
-              {tab === "historial"   && "Historial de Sesiones"}
+              {tab === "estudiantes"   && "Mis Estudiantes"}
+              {tab === "crisis"        && "Crisis Activas"}
+              {tab === "historial"     && "Historial de Sesiones"}
+              {tab === "sesion_asistida" && "Sesiones Asistidas"}
             </h1>
             <p className="text-xs mt-0.5 hidden sm:block" style={{ color: "#a0aec0" }}>
-              {tab === "estudiantes" && `${students.length} estudiante${students.length !== 1 ? "s" : ""} registrado${students.length !== 1 ? "s" : ""}`}
-              {tab === "crisis"      && `${activeCrisis.length} alerta${activeCrisis.length !== 1 ? "s" : ""} activa${activeCrisis.length !== 1 ? "s" : ""}`}
-              {tab === "historial"   && "Accede al perfil para ver detalles"}
+              {tab === "estudiantes"   && `${students.length} estudiante${students.length !== 1 ? "s" : ""} registrado${students.length !== 1 ? "s" : ""}`}
+              {tab === "crisis"        && `${activeCrisis.length} alerta${activeCrisis.length !== 1 ? "s" : ""} activa${activeCrisis.length !== 1 ? "s" : ""}`}
+              {tab === "historial"     && "Accede al perfil para ver detalles"}
+              {tab === "sesion_asistida" && "Solicita el apoyo de un especialista para tus estudiantes"}
             </p>
             </div>
           </div>
@@ -938,9 +1049,313 @@ export default function TutorPage() {
               </motion.div>
             )}
 
+            {/* ══════════════════════════════════════════════════════════════
+                SESIÓN ASISTIDA
+            ══════════════════════════════════════════════════════════════ */}
+            {tab === "sesion_asistida" && (
+              <motion.div
+                key="sesion_asistida"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25 }}
+              >
+                {/* Header + request button */}
+                <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: "#7f8c8d" }}>
+                      Conecta a tus estudiantes con psicólogos, terapeutas y otros especialistas.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setReqProfId(""); setReqStudentId(""); setReqNotes(""); setReqBanner(null);
+                      if (!assistedLoaded) loadAssistedSessions();
+                      setShowRequestModal(true);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
+                    style={{ background: "linear-gradient(135deg,#7FB3D5,#4587a9)", boxShadow: "0 4px 16px rgba(127,179,213,0.35)" }}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Solicitar sesión asistida
+                  </button>
+                </div>
+
+                {/* Loading */}
+                {assistedLoading ? (
+                  <div className="flex items-center justify-center py-24">
+                    <Loader2 className="w-10 h-10 animate-spin" style={{ color: "#7FB3D5" }} />
+                  </div>
+                ) : assistedSessions.length === 0 ? (
+                  <div className="text-center py-20 rounded-3xl"
+                    style={{ background: "white", border: "1.5px solid #D5DBDB" }}>
+                    <div className="text-5xl mb-4">🩺</div>
+                    <p className="font-bold mb-1" style={{ color: "#7f8c8d" }}>
+                      Aún no has solicitado ninguna sesión asistida
+                    </p>
+                    <p className="text-sm" style={{ color: "#a0aec0" }}>
+                      Solicita el apoyo de un especialista cuando lo necesites
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {assistedSessions.map((s, i) => {
+                      const sc = ASST_STATUS[s.status] || ASST_STATUS.pendiente;
+                      return (
+                        <motion.div key={s.id_sesion_asistida}
+                          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.05 }}
+                          className="rounded-2xl p-5"
+                          style={{ background: "white", border: `1.5px solid ${sc.border}`, boxShadow: "0 2px 10px rgba(127,179,213,0.07)" }}
+                        >
+                          <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+                            <div className="flex items-center gap-3">
+                              <span className="text-2xl">
+                                {SPECIALTY_EMOJI[s.professional_speciality || ""] || "🩺"}
+                              </span>
+                              <div>
+                                <p className="font-extrabold text-sm" style={{ color: "#34495E" }}>
+                                  {s.professional_name || "Profesional"}
+                                </p>
+                                <p className="text-xs" style={{ color: "#a0aec0" }}>
+                                  {s.professional_speciality || "Especialista"}
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-xs font-bold px-3 py-1 rounded-full"
+                              style={{ background: sc.bg, color: sc.color, border: `1px solid ${sc.border}` }}>
+                              {sc.label}
+                            </span>
+                          </div>
+
+                          {/* Student + date */}
+                          <div className="flex flex-wrap items-center gap-4 mb-4">
+                            <div className="rounded-xl px-3 py-2" style={{ background: "#F0FDF4" }}>
+                              <p className="text-xs font-bold" style={{ color: "#15803D" }}>👤 {s.student_name || "—"}</p>
+                            </div>
+                            {s.requested_at && (
+                              <p className="text-xs" style={{ color: "#a0aec0" }}>
+                                📅 {new Date(s.requested_at).toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" })}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Notes */}
+                          {s.notes && (
+                            <p className="text-xs rounded-lg px-3 py-2 mb-4"
+                              style={{ background: "#FFFBEB", color: "#D97706", border: "1px solid #FCD34D" }}>
+                              📝 {s.notes}
+                            </p>
+                          )}
+
+                          {/* Meeting link — tutor can join */}
+                          {s.meeting_link && (
+                            <div className="rounded-xl p-3 mb-3"
+                              style={{ background: "#E1EFFF", border: "1.5px solid #93C5FD" }}>
+                              <p className="text-xs font-bold mb-2" style={{ color: "#1D4ED8" }}>
+                                🔗 El profesional envió un enlace de reunión
+                              </p>
+                              <a
+                                href={s.meeting_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold text-white"
+                                style={{ background: "linear-gradient(135deg,#3B82F6,#1D4ED8)" }}
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                                Unirse a la reunión
+                              </a>
+                            </div>
+                          )}
+
+                          {/* Close button (if active) */}
+                          {["aceptada", "en_curso"].includes(s.status) && (
+                            <button
+                              onClick={() => handleCloseAssisted(s.id_sesion_asistida)}
+                              disabled={closingId === s.id_sesion_asistida}
+                              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all"
+                              style={{ color: "#6B7280", background: "#F9FAFB", border: "1px solid #D1D5DB" }}
+                            >
+                              {closingId === s.id_sesion_asistida
+                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                : <X className="w-3.5 h-3.5" />}
+                              Finalizar sesión
+                            </button>
+                          )}
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
+              </motion.div>
+            )}
+
           </AnimatePresence>
         </main>
       </div>
+
+      {/* ══════════════════ MODAL: SOLICITAR SESIÓN ASISTIDA ══════════════════ */}
+      <AnimatePresence>
+        {showRequestModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 flex items-center justify-center z-50 px-4 py-8 overflow-y-auto"
+            style={{ background: "rgba(52,73,94,0.50)", backdropFilter: "blur(4px)" }}
+            onClick={() => !reqSubmitting && setShowRequestModal(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: "spring", stiffness: 280, damping: 22 }}
+              className="rounded-3xl p-7 w-full max-w-lg relative"
+              style={{ background: "white", boxShadow: "0 12px 50px rgba(52,73,94,0.22)" }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-xl"
+                    style={{ background: "#E1EFFF" }}>🩺</div>
+                  <div>
+                    <h2 className="font-extrabold text-base" style={{ color: "#34495E" }}>
+                      Solicitar sesión asistida
+                    </h2>
+                    <p className="text-xs" style={{ color: "#a0aec0" }}>
+                      Elige un especialista disponible y el estudiante
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => !reqSubmitting && setShowRequestModal(false)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center"
+                  style={{ background: "#f3f4f6", color: "#7f8c8d" }}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Banner */}
+              {reqBanner && (
+                <div className="rounded-xl px-4 py-3 text-sm font-semibold mb-4 flex items-center gap-2"
+                  style={reqBanner.type === "ok"
+                    ? { background: "#F0FDF4", color: "#15803D", border: "1px solid #86EFAC" }
+                    : { background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FCA5A5" }}>
+                  {reqBanner.type === "ok" ? "✅" : "⚠️"} {reqBanner.msg}
+                </div>
+              )}
+
+              <form onSubmit={handleRequestSession} className="space-y-5">
+
+                {/* Professional selector */}
+                <div>
+                  <label className="text-sm font-bold block mb-2" style={{ color: "#34495E" }}>
+                    Especialista disponible <span style={{ color: "#FFB37B" }}>*</span>
+                  </label>
+                  {assistedLoading ? (
+                    <p className="text-sm" style={{ color: "#a0aec0" }}>Cargando especialistas…</p>
+                  ) : availableProfs.length === 0 ? (
+                    <div className="rounded-xl p-4 text-sm text-center"
+                      style={{ background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FCA5A5" }}>
+                      No hay especialistas disponibles en este momento
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {availableProfs.map(p => (
+                        <button
+                          key={p.id_professional}
+                          type="button"
+                          onClick={() => setReqProfId(p.id_professional)}
+                          className="w-full text-left rounded-xl p-3.5 flex items-center gap-3 transition-all"
+                          style={reqProfId === p.id_professional
+                            ? { background: "#E1EFFF", border: "2px solid #7FB3D5" }
+                            : { background: "#f9fafb", border: "1.5px solid #D5DBDB" }}
+                        >
+                          <span className="text-xl flex-shrink-0">
+                            {SPECIALTY_EMOJI[p.speciality] || "🩺"}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="font-bold text-sm truncate" style={{ color: "#34495E" }}>
+                              {p.full_name}
+                            </p>
+                            <p className="text-xs" style={{ color: "#7f8c8d" }}>
+                              {p.speciality || "Especialista"} · {p.license_number || ""}
+                            </p>
+                          </div>
+                          {reqProfId === p.id_professional && (
+                            <span className="ml-auto text-lg flex-shrink-0">✓</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Student selector */}
+                <div>
+                  <label className="text-sm font-bold block mb-2" style={{ color: "#34495E" }}>
+                    Estudiante <span style={{ color: "#FFB37B" }}>*</span>
+                  </label>
+                  <select
+                    required
+                    value={reqStudentId}
+                    onChange={e => setReqStudentId(e.target.value)}
+                    style={{
+                      width: "100%", border: "1.5px solid #D5DBDB", borderRadius: "0.75rem",
+                      padding: "0.75rem 1rem", fontSize: "0.875rem", outline: "none",
+                      color: "#34495E", background: "white",
+                    }}
+                  >
+                    <option value="">— Selecciona un estudiante —</option>
+                    {students.filter(s => s.account_status === "activo").map(s => (
+                      <option key={s.id_student} value={s.id_student}>
+                        {s.full_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="text-sm font-bold block mb-2" style={{ color: "#34495E" }}>
+                    Notas para el profesional
+                    <span className="font-normal ml-1" style={{ color: "#a0aec0" }}>(opcional)</span>
+                  </label>
+                  <textarea
+                    value={reqNotes}
+                    onChange={e => setReqNotes(e.target.value)}
+                    placeholder="Describe brevemente el motivo de la consulta o el comportamiento observado…"
+                    rows={3}
+                    style={{
+                      width: "100%", border: "1.5px solid #D5DBDB", borderRadius: "0.75rem",
+                      padding: "0.75rem 1rem", fontSize: "0.875rem", outline: "none",
+                      color: "#34495E", background: "white", resize: "vertical",
+                    }}
+                  />
+                </div>
+
+                {/* Submit */}
+                <button
+                  type="submit"
+                  disabled={reqSubmitting || !reqProfId || !reqStudentId}
+                  className="w-full py-3.5 rounded-2xl font-extrabold text-white flex items-center justify-center gap-2 transition-all"
+                  style={{
+                    background: (reqSubmitting || !reqProfId || !reqStudentId)
+                      ? "#D5DBDB"
+                      : "linear-gradient(135deg,#7FB3D5,#4587a9)",
+                    cursor: (reqSubmitting || !reqProfId || !reqStudentId) ? "not-allowed" : "pointer",
+                    boxShadow: (reqSubmitting || !reqProfId || !reqStudentId)
+                      ? "none"
+                      : "0 4px 18px rgba(127,179,213,0.40)",
+                  }}
+                >
+                  {reqSubmitting
+                    ? <><Loader2 className="w-5 h-5 animate-spin" /> Enviando…</>
+                    : <><Send className="w-5 h-5" /> Enviar solicitud</>}
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ══════════════════ MODAL CONFIRMAR ELIMINAR ══════════════════ */}
       <AnimatePresence>

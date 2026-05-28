@@ -21,6 +21,7 @@ from routers import (
     crisis,
     interventions,
     reports,
+    sesiones_asistidas,
 )
 
 load_dotenv()
@@ -51,8 +52,9 @@ app.include_router(sessions.router, prefix="/api/sessions", tags=["Sesiones"])
 app.include_router(activities.router, prefix="/api/activities", tags=["Actividades"])
 app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoreo"])
 app.include_router(crisis.router, prefix="/api/crisis", tags=["Crisis"])
-app.include_router(interventions.router, prefix="/api/interventions", tags=["Intervenciones"])
-app.include_router(reports.router, prefix="/api/reports", tags=["Reportes"])
+app.include_router(interventions.router,      prefix="/api/interventions",       tags=["Intervenciones"])
+app.include_router(reports.router,            prefix="/api/reports",             tags=["Reportes"])
+app.include_router(sesiones_asistidas.router, prefix="/api/assisted-sessions",  tags=["Sesiones Asistidas"])
 
 # --- Archivos subidos (diagnósticos, etc.) ---
 _UPLOADS_DIR = Path(__file__).parent / "uploads"

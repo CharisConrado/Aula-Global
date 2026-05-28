@@ -34,7 +34,42 @@ def _row_to_prof(r) -> ProfessionalResponse:
     )
 
 
-# ── Listar profesionales ─────────────────────────────────────
+# ── Profesionales disponibles (sin sesión asistida activa) ───
+@router.get("/available", response_model=list[ProfessionalResponse])
+async def profesionales_disponibles(
+    db: Session = Depends(get_db),
+    cu: TokenData = Depends(require_role(RolUsuario.tutor, RolUsuario.admin)),
+):
+    """
+    Devuelve los profesionales activos que NO tienen una sesión asistida
+    pendiente, aceptada o en_curso. Si la tabla aún no existe, devuelve todos.
+    """
+    try:
+        rows = db.execute(text("""
+            SELECT id_professional, full_name, email, license_number, speciality,
+                   phone, verification_status, is_active, created_at
+            FROM professional
+            WHERE is_active = true
+              AND id_professional NOT IN (
+                  SELECT id_professional
+                  FROM sesion_asistida
+                  WHERE status IN ('pendiente', 'aceptada', 'en_curso')
+              )
+            ORDER BY speciality ASC, full_name ASC
+        """)).fetchall()
+    except Exception:
+        # Fallback: tabla sesion_asistida aún no existe
+        rows = db.execute(text("""
+            SELECT id_professional, full_name, email, license_number, speciality,
+                   phone, verification_status, is_active, created_at
+            FROM professional
+            WHERE is_active = true
+            ORDER BY speciality ASC, full_name ASC
+        """)).fetchall()
+    return [_row_to_prof(r) for r in rows]
+
+
+# ── Listar todos los profesionales ────────────────────────────
 @router.get("/", response_model=list[ProfessionalResponse])
 async def listar_profesionales(
     db: Session = Depends(get_db),

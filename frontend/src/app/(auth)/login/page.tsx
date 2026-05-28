@@ -82,7 +82,7 @@ export default function LoginPage() {
         rol: res.rol as "estudiante" | "tutor" | "profesional" | "admin",
       });
       const routes: Record<string, string> = {
-        tutor: "/tutor", profesional: "/admin", admin: "/admin", estudiante: "/estudiante",
+        tutor: "/tutor", profesional: "/profesional", admin: "/admin", estudiante: "/estudiante",
       };
       router.push(routes[res.rol] || "/");
     } catch (err) {

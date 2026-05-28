@@ -702,3 +702,64 @@ class AdminResponse(BaseModel):
     access_code: str
     is_active: bool
     created_at: Optional[datetime]
+
+
+# ============================================================
+# SESIÓN ASISTIDA
+# ============================================================
+
+# Especialidades reconocidas en la plataforma
+ESPECIALIDADES = [
+    "Psicólogo Clínico",
+    "Psiquiatra",
+    "Neuropsicólogo",
+    "Terapeuta Ocupacional",
+    "Logopeda",
+]
+
+
+class EstadoSesionAsistida(str, Enum):
+    pendiente  = "pendiente"
+    aceptada   = "aceptada"
+    en_curso   = "en_curso"
+    finalizada = "finalizada"
+    rechazada  = "rechazada"
+
+
+class SesionAsistidaCreate(BaseModel):
+    id_tutor:        str
+    id_professional: str
+    id_student:      str
+    notes:           Optional[str] = None
+
+
+class SesionAsistidaUpdate(BaseModel):
+    status:       Optional[str] = None
+    meeting_link: Optional[str] = None
+    notes:        Optional[str] = None
+
+
+class SendLinkPayload(BaseModel):
+    meeting_link: str
+
+
+class SesionAsistidaResponse(BaseModel):
+    id_sesion_asistida:      str
+    id_tutor:                str
+    id_professional:         str
+    id_student:              str
+    status:                  str   # pendiente|aceptada|en_curso|finalizada|rechazada
+    notes:                   Optional[str] = None
+    meeting_link:            Optional[str] = None
+    requested_at:            Optional[datetime] = None
+    accepted_at:             Optional[datetime] = None
+    closed_at:               Optional[datetime] = None
+    created_at:              Optional[datetime] = None
+    # Joined fields (populated by JOIN queries)
+    tutor_name:              Optional[str] = None
+    professional_name:       Optional[str] = None
+    student_name:            Optional[str] = None
+    professional_speciality: Optional[str] = None
+
+    class Config:
+        from_attributes = True

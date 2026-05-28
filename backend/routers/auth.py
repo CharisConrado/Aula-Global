@@ -407,3 +407,104 @@ async def admin_create_professional(
         "is_active":           row[7],
         "created_at":          row[8].isoformat() if row[8] else None,
     }
+
+
+# ── Seed profesionales de prueba ─────────────────────────────
+_TEST_PROFESSIONALS = [
+    # Psicólogos Clínicos
+    {"full_name": "Dra. Valentina Ríos",    "email": "valentina.rios@aulaglobal.edu.co",
+     "speciality": "Psicólogo Clínico",     "license_number": "PSI-001", "phone": "+57 310 0000001"},
+    {"full_name": "Dr. Santiago Morales",   "email": "santiago.morales@aulaglobal.edu.co",
+     "speciality": "Psicólogo Clínico",     "license_number": "PSI-002", "phone": "+57 310 0000002"},
+    # Psiquiatras
+    {"full_name": "Dra. Camila Herrera",    "email": "camila.herrera@aulaglobal.edu.co",
+     "speciality": "Psiquiatra",            "license_number": "PSQ-001", "phone": "+57 310 0000003"},
+    {"full_name": "Dr. Andrés Vargas",      "email": "andres.vargas@aulaglobal.edu.co",
+     "speciality": "Psiquiatra",            "license_number": "PSQ-002", "phone": "+57 310 0000004"},
+    # Neuropsicólogos
+    {"full_name": "Dra. Isabella Jiménez",  "email": "isabella.jimenez@aulaglobal.edu.co",
+     "speciality": "Neuropsicólogo",        "license_number": "NEU-001", "phone": "+57 310 0000005"},
+    {"full_name": "Dr. Felipe Castillo",    "email": "felipe.castillo@aulaglobal.edu.co",
+     "speciality": "Neuropsicólogo",        "license_number": "NEU-002", "phone": "+57 310 0000006"},
+    # Terapeutas Ocupacionales
+    {"full_name": "Dra. Mariana López",     "email": "mariana.lopez@aulaglobal.edu.co",
+     "speciality": "Terapeuta Ocupacional", "license_number": "TO-001",  "phone": "+57 310 0000007"},
+    {"full_name": "Lic. Carlos Rueda",      "email": "carlos.rueda@aulaglobal.edu.co",
+     "speciality": "Terapeuta Ocupacional", "license_number": "TO-002",  "phone": "+57 310 0000008"},
+    # Logopedas
+    {"full_name": "Dra. Sofía Mendoza",     "email": "sofia.mendoza@aulaglobal.edu.co",
+     "speciality": "Logopeda",              "license_number": "LOG-001", "phone": "+57 310 0000009"},
+    {"full_name": "Lic. Tomás Guerrero",    "email": "tomas.guerrero@aulaglobal.edu.co",
+     "speciality": "Logopeda",              "license_number": "LOG-002", "phone": "+57 310 0000010"},
+]
+
+_DEFAULT_PASSWORD = "AulaGlobal2024!"
+
+
+@router.post("/seed-professionals")
+async def seed_test_professionals(
+    master_key: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Crea los 10 profesionales de prueba si no existen.
+    Protegido por la clave maestra (ADMIN_MASTER_KEY).
+
+    Contraseña de todos: AulaGlobal2024!
+    """
+    if master_key != ADMIN_MASTER_KEY:
+        raise HTTPException(status_code=403, detail="Clave maestra incorrecta")
+
+    created: list[str] = []
+    skipped: list[str] = []
+
+    for p in _TEST_PROFESSIONALS:
+        existing = db.execute(
+            text("SELECT id_professional FROM professional WHERE email = :email"),
+            {"email": p["email"]},
+        ).fetchone()
+        if existing:
+            skipped.append(p["email"])
+            continue
+
+        # Registrar en Supabase Auth
+        try:
+            supabase_uid = supabase_register(p["email"], _DEFAULT_PASSWORD)
+        except Exception as auth_err:
+            skipped.append(f'{p["email"]} (auth: {auth_err})')
+            continue
+
+        # Insertar en la tabla professional con status 'aprobado'
+        try:
+            db.execute(
+                text("""
+                    INSERT INTO professional
+                        (full_name, license_number, speciality, email, phone, is_active, verification_status)
+                    VALUES
+                        (:full_name, :license_number, :speciality, :email, :phone, true, 'aprobado')
+                """),
+                {
+                    "full_name":      p["full_name"],
+                    "license_number": p["license_number"],
+                    "speciality":     p["speciality"],
+                    "email":          p["email"],
+                    "phone":          p.get("phone"),
+                },
+            )
+            db.commit()
+            created.append(p["email"])
+        except Exception as db_err:
+            db.rollback()
+            if supabase_admin and supabase_uid:
+                try:
+                    supabase_admin.auth.admin.delete_user(supabase_uid)
+                except Exception:
+                    pass
+            skipped.append(f'{p["email"]} (db: {db_err})')
+
+    return {
+        "created":  created,
+        "skipped":  skipped,
+        "password": _DEFAULT_PASSWORD,
+        "message":  f"{len(created)} profesionales creados, {len(skipped)} omitidos",
+    }
