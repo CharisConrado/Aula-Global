@@ -219,13 +219,22 @@ export default function TutorPage() {
             }));
           }, 4000);
 
-          // ── Frame de video puro (alta frecuencia): solo refresca la imagen ──
+          // ── Frame de video (alta frecuencia): refresca imagen + emoción/atención ──
           if (data.type === "frame_update") {
             setMonitorStates((prev) => {
-              const cur = prev[sid] || empty;
+              const cur  = prev[sid] || empty;
+              const emo  = data.emocion_actual ?? data.emocion;
+              const attn = data.nivel_atencion;
               return {
                 ...prev,
-                [sid]: { ...cur, online: true, videoFrame: data.video_frame ?? cur.videoFrame },
+                [sid]: {
+                  ...cur,
+                  online:     true,
+                  videoFrame: data.video_frame ?? cur.videoFrame,
+                  // Actualizar emoción y atención si vienen en el frame
+                  ...(emo  ? { emocion: emo } : {}),
+                  ...(attn !== undefined && attn !== null ? { nivel_atencion: attn } : {}),
+                },
               };
             });
             return;
