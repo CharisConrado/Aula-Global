@@ -1072,7 +1072,7 @@ export default function TutorEstudiantePage() {
                 style={{ background: "linear-gradient(135deg,#7FB3D5,#4587a9)", boxShadow: "0 4px 16px rgba(127,179,213,0.35)" }}
               >
                 <Stethoscope className="w-4 h-4 flex-shrink-0" />
-                Solicitar sesión asistida
+                Solicitar consulta con profesional
               </button>
             </motion.div>
           </div>
@@ -1233,7 +1233,7 @@ export default function TutorEstudiantePage() {
                     style={{ background: "#E1EFFF" }}>🩺</div>
                   <div>
                     <h2 className="font-extrabold text-base" style={{ color: "#34495E" }}>
-                      Solicitar sesión asistida
+                      Solicitar consulta con profesional
                     </h2>
                     <p className="text-xs" style={{ color: "#a0aec0" }}>
                       Estudiante: <strong style={{ color: "#4587a9" }}>{student?.full_name}</strong>
