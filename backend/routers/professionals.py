@@ -125,7 +125,7 @@ async def actualizar_profesional(
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
     updates["id"] = prof_id
     result = db.execute(
-        text(f"UPDATE professional SET {set_clause}, updated_at = NOW() WHERE id_professional = CAST(:id AS uuid)"),
+        text(f"UPDATE professional SET {set_clause} WHERE id_professional = CAST(:id AS uuid)"),
         updates,
     )
     db.commit()

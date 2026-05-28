@@ -3,6 +3,7 @@ Aula Global — Servidor principal FastAPI
 Plataforma educativa adaptativa para niños con neurodivergencia (TDAH/TEA)
 """
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -26,7 +27,36 @@ from routers import (
 
 load_dotenv()
 
+
+def _run_migrations():
+    """Migraciones automáticas al arrancar — idempotentes (IF NOT EXISTS / DROP IF EXISTS)."""
+    try:
+        from database import engine
+        from sqlalchemy import text as _text
+        with engine.connect() as conn:
+            # Ampliar el constraint de verification_status para aceptar los 3 estados
+            conn.execute(_text("""
+                ALTER TABLE professional
+                    DROP CONSTRAINT IF EXISTS professional_verification_status_check
+            """))
+            conn.execute(_text("""
+                ALTER TABLE professional
+                    ADD CONSTRAINT professional_verification_status_check
+                    CHECK (verification_status IN ('pendiente', 'aprobado', 'rechazado'))
+            """))
+            conn.commit()
+    except Exception as e:
+        print(f"[migration] advertencia: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _run_migrations()
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Aula Global API",
     description="API para la plataforma educativa adaptativa Aula Global",
     version="1.0.0",
