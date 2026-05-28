@@ -28,10 +28,14 @@ _ACTIVITY_FOLDER  = _UPLOAD_ROOT / "activities"
 _ACTIVITY_FOLDER.mkdir(parents=True, exist_ok=True)
 
 _MIMES_DOC = {
-    "application/pdf": ".pdf",
-    "image/jpeg":      ".jpg",
-    "image/png":       ".png",
-    "image/webp":      ".webp",
+    "application/pdf":  ".pdf",
+    # PowerPoint (formato moderno .pptx)
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    # PowerPoint (formato antiguo .ppt)
+    "application/vnd.ms-powerpoint": ".ppt",
+    "image/jpeg":  ".jpg",
+    "image/png":   ".png",
+    "image/webp":  ".webp",
 }
 _MIMES_VIDEO = {
     "video/mp4":  ".mp4",

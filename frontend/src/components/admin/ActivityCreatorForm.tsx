@@ -8,7 +8,7 @@ import { Plus, X, Check, Loader2, Upload, Trash2, Link2 } from "lucide-react";
 interface ActivityTypeLocal { id_type_activity: string; name: string; description: string; }
 interface SubjectLocal      { id_subject: string; id_degree: string; subject_name: string; }
 interface DegreeLocal       { id_degree: string; grade_name: string; level: number; }
-interface QuizPregunta      { texto: string; opciones: [string, string, string, string]; correcta: number; }
+interface QuizPregunta      { pregunta: string; opciones: [string, string, string, string]; respuesta_correcta: number; }
 interface Par               { a: string; b: string; }
 interface Oracion           { texto: string; respuesta: string; }
 
@@ -185,12 +185,12 @@ function SimpleList({ items, placeholder, singularLabel, onChange }: {
 // ── QuizBuilder ───────────────────────────────────────────────────────
 function QuizBuilder({ preguntas, onChange }: { preguntas: QuizPregunta[]; onChange: (p: QuizPregunta[]) => void }) {
   const add = () =>
-    onChange([...preguntas, { texto: "", opciones: ["", "", "", ""], correcta: 0 }]);
+    onChange([...preguntas, { pregunta: "", opciones: ["", "", "", ""], respuesta_correcta: 0 }]);
 
   const remove = (i: number) => onChange(preguntas.filter((_, idx) => idx !== i));
 
   const setTexto = (i: number, v: string) => {
-    const n = [...preguntas]; n[i] = { ...n[i], texto: v }; onChange(n);
+    const n = [...preguntas]; n[i] = { ...n[i], pregunta: v }; onChange(n);
   };
 
   const setOpcion = (pi: number, oi: number, v: string) => {
@@ -200,7 +200,7 @@ function QuizBuilder({ preguntas, onChange }: { preguntas: QuizPregunta[]; onCha
   };
 
   const setCorrecta = (pi: number, oi: number) => {
-    const n = [...preguntas]; n[pi] = { ...n[pi], correcta: oi }; onChange(n);
+    const n = [...preguntas]; n[pi] = { ...n[pi], respuesta_correcta: oi }; onChange(n);
   };
 
   return (
@@ -226,7 +226,7 @@ function QuizBuilder({ preguntas, onChange }: { preguntas: QuizPregunta[]; onCha
             <input
               type="text"
               placeholder="Escribe la pregunta…"
-              value={p.texto}
+              value={p.pregunta}
               onChange={(e) => setTexto(pi, e.target.value)}
               className="flex-1 text-sm font-semibold bg-transparent outline-none"
               style={{ color: "#34495E" }}
@@ -241,7 +241,7 @@ function QuizBuilder({ preguntas, onChange }: { preguntas: QuizPregunta[]; onCha
           {/* Opciones estilo Kahoot */}
           <div className="grid grid-cols-2 gap-1.5">
             {QUIZ_COLORS.map((c, oi) => {
-              const isOk = p.correcta === oi;
+              const isOk = p.respuesta_correcta === oi;
               return (
                 <div key={oi}
                   className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg"
@@ -414,7 +414,7 @@ export default function ActivityCreatorForm({
 
   /* ── Quiz ── */
   const [preguntas, setPreguntas] = useState<QuizPregunta[]>([
-    { texto: "", opciones: ["", "", "", ""], correcta: 0 },
+    { pregunta: "", opciones: ["", "", "", ""], respuesta_correcta: 0 },
   ]);
 
   /* ── Emparejar ── */
@@ -468,7 +468,7 @@ export default function ActivityCreatorForm({
   const reset = () => {
     setTitle(""); setDescription(""); setSubjectId(""); setInstruction(""); setEstimatedMinutes(20);
     setTipoEval("quiz"); setPresentacionUrl(null);
-    setPreguntas([{ texto: "", opciones: ["", "", "", ""], correcta: 0 }]);
+    setPreguntas([{ pregunta: "", opciones: ["", "", "", ""], respuesta_correcta: 0 }]);
     setPares([{ a: "", b: "" }]);
     setOraciones([{ texto: "", respuesta: "" }]);
     setPuntosClave([""]);

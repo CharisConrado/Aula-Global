@@ -2,17 +2,20 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, ExternalLink, LayoutGrid } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, LayoutGrid, FileText, Image as ImageIcon } from "lucide-react";
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 export interface SlideData { num: number; titulo: string; puntos: string[] }
 
 interface PresentationViewerProps {
-  pptxUrl?:  string;       // URL pública del PPTX en Supabase Storage
-  slides?:   SlideData[];  // Diapositivas en texto (fallback)
-  title:     string;
+  pptxUrl?:   string;       // URL del archivo (puede ser relativa /uploads/...)
+  slides?:    SlideData[];  // Diapositivas en texto (fallback)
+  title:      string;
   onContinue: () => void;
 }
+
+// Base URL del backend para convertir URLs relativas en absolutas
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
 // ── Paletas de color para el fallback de texto ────────────────────────────────
 const PALETTES = [
@@ -24,12 +27,38 @@ const PALETTES = [
   { from: "#14B8A6", to: "#0F766E" },
 ];
 
+// ── Detectar tipo de archivo por extensión ────────────────────────────────────
+function getFileType(url: string): "pptx" | "pdf" | "image" | "unknown" {
+  const ext = url.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pptx" || ext === "ppt") return "pptx";
+  if (ext === "pdf")                   return "pdf";
+  if (["jpg","jpeg","png","webp","gif","svg"].includes(ext)) return "image";
+  return "unknown";
+}
+
+// ── Construir URL absoluta ────────────────────────────────────────────────────
+function toAbsolute(url: string): string {
+  if (!url) return url;
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `${API_BASE}${url.startsWith("/") ? url : `/${url}`}`;
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 export default function PresentationViewer({ pptxUrl, slides = [], title, onContinue }: PresentationViewerProps) {
-  // Modo: "iframe" (Office Online) o "slides" (carrusel texto)
-  const [mode,       setMode]       = useState<"iframe" | "slides">(pptxUrl ? "iframe" : "slides");
-  const [iframeLoaded, setIframeLoaded] = useState(false);
-  const [timedOut,   setTimedOut]   = useState(false);
+  const absoluteUrl = pptxUrl ? toAbsolute(pptxUrl) : null;
+  const fileType    = absoluteUrl ? getFileType(absoluteUrl) : "unknown";
+
+  // Modo: "office" (pptx), "pdf", "image", "slides" (texto fallback)
+  const initialMode = (): "office" | "pdf" | "image" | "slides" => {
+    if (fileType === "pptx")  return "office";
+    if (fileType === "pdf")   return "pdf";
+    if (fileType === "image") return "image";
+    return "slides";
+  };
+
+  const [mode,         setMode]         = useState<"office" | "pdf" | "image" | "slides">(initialMode);
+  const [officeLoaded, setOfficeLoaded] = useState(false);
+  const [timedOut,     setTimedOut]     = useState(false);
 
   // Carrusel de texto
   const [current,   setCurrent]   = useState(0);
@@ -39,21 +68,22 @@ export default function PresentationViewer({ pptxUrl, slides = [], title, onCont
 
   // Timeout de 14 s para el iframe de Office Online
   useEffect(() => {
-    if (mode !== "iframe" || !pptxUrl) return;
+    if (mode !== "office" || !absoluteUrl) return;
+    setOfficeLoaded(false);
+    setTimedOut(false);
     timeoutRef.current = setTimeout(() => setTimedOut(true), 14_000);
     return () => clearTimeout(timeoutRef.current);
-  }, [mode, pptxUrl]);
+  }, [mode, absoluteUrl]);
 
-  // Limpiar timer cuando carga
-  const handleIframeLoad = () => {
+  const handleOfficeLoad = () => {
     clearTimeout(timeoutRef.current);
-    setIframeLoaded(true);
+    setOfficeLoaded(true);
     setTimedOut(false);
   };
 
-  // ── Embed URL de Office Online ────────────────────────────────────────────
-  const officeUrl = pptxUrl
-    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(pptxUrl)}`
+  // URL de Office Online (solo para PPTX)
+  const officeUrl = fileType === "pptx" && absoluteUrl
+    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteUrl)}`
     : null;
 
   // ── Carrusel (texto) ──────────────────────────────────────────────────────
@@ -66,6 +96,10 @@ export default function PresentationViewer({ pptxUrl, slides = [], title, onCont
     setCurrent(idx);
   }
 
+  // ── Botones de cambio de modo ─────────────────────────────────────────────
+  const canSwitchToSlides = slides.length > 0 && mode !== "slides";
+  const canSwitchToOffice = fileType === "pptx" && mode !== "office";
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <motion.div
@@ -74,10 +108,12 @@ export default function PresentationViewer({ pptxUrl, slides = [], title, onCont
       className="max-w-4xl mx-auto"
     >
       {/* ── Cabecera ────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <span className="text-3xl">📊</span>
-          <div>
+      <div className="flex items-center justify-between mb-3 gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-3xl flex-shrink-0">
+            {fileType === "pdf" ? "📄" : fileType === "image" ? "🖼️" : "📊"}
+          </span>
+          <div className="min-w-0">
             <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Presentación</p>
             <h2 className="font-extrabold text-gray-700 text-lg leading-tight truncate max-w-xs sm:max-w-md">
               {title}
@@ -85,23 +121,31 @@ export default function PresentationViewer({ pptxUrl, slides = [], title, onCont
           </div>
         </div>
 
-        {/* Botones de modo + abrir en nueva pestaña */}
-        <div className="flex items-center gap-2">
-          {pptxUrl && slides.length > 0 && (
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Cambiar entre modos disponibles */}
+          {canSwitchToSlides && (
             <button
-              onClick={() => { setMode(mode === "iframe" ? "slides" : "iframe"); setTimedOut(false); }}
+              onClick={() => { setMode("slides"); }}
               className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border transition-all"
-              style={mode === "slides"
-                ? { background: "#E1EFFF", border: "1.5px solid #7FB3D5", color: "#4587a9" }
-                : { background: "#f8f9fa", border: "1.5px solid #e5e7eb", color: "#9ca3af" }}
+              style={{ background: "#E1EFFF", border: "1.5px solid #7FB3D5", color: "#4587a9" }}
             >
               <LayoutGrid className="w-3.5 h-3.5" />
-              {mode === "iframe" ? "Ver texto" : "Ver diapositivas"}
+              Ver texto
             </button>
           )}
-          {pptxUrl && (
+          {canSwitchToOffice && (
+            <button
+              onClick={() => { setMode("office"); }}
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border transition-all"
+              style={{ background: "#f8f9fa", border: "1.5px solid #e5e7eb", color: "#9ca3af" }}
+            >
+              Ver diapositivas
+            </button>
+          )}
+          {/* Abrir en nueva pestaña */}
+          {absoluteUrl && (
             <a
-              href={pptxUrl}
+              href={absoluteUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border"
@@ -115,17 +159,16 @@ export default function PresentationViewer({ pptxUrl, slides = [], title, onCont
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
-          MODO A: Office Online iframe (PPTX tal como está)
+          MODO: Office Online (PPTX)
       ══════════════════════════════════════════════════════════════════════ */}
-      {mode === "iframe" && officeUrl && (
+      {mode === "office" && officeUrl && (
         <div>
-          {/* Contenedor iframe */}
           <div
             className="relative rounded-3xl overflow-hidden border-2 border-purple-100"
             style={{ height: 480, boxShadow: "0 8px 32px rgba(0,0,0,0.12)" }}
           >
-            {/* Spinner de carga */}
-            {!iframeLoaded && (
+            {/* Spinner */}
+            {!officeLoaded && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-purple-50 z-10">
                 <motion.div
                   animate={{ rotate: 360 }}
@@ -136,49 +179,52 @@ export default function PresentationViewer({ pptxUrl, slides = [], title, onCont
                 <p className="text-purple-400 text-xs mt-1">Puede tardar algunos segundos</p>
               </div>
             )}
-
-            {/* Iframe */}
             <iframe
               src={officeUrl}
               title={`Presentación: ${title}`}
               className="w-full h-full"
-              onLoad={handleIframeLoad}
+              onLoad={handleOfficeLoad}
               allowFullScreen
               style={{ border: "none" }}
             />
           </div>
 
-          {/* Aviso de timeout */}
+          {/* Timeout */}
           <AnimatePresence>
-            {timedOut && !iframeLoaded && (
+            {timedOut && !officeLoaded && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                className="mt-3 p-4 rounded-2xl flex items-center justify-between gap-4"
+                className="mt-3 p-4 rounded-2xl"
                 style={{ background: "#fff8ed", border: "1.5px solid #fcd34d" }}
               >
-                <div>
-                  <p className="text-sm font-bold text-yellow-700">La presentación tarda en cargar</p>
-                  <p className="text-xs text-yellow-600">Puedes esperar o ver el contenido en texto</p>
+                <p className="text-sm font-bold text-yellow-700 mb-1">
+                  La presentación tarda en cargar
+                </p>
+                <p className="text-xs text-yellow-600 mb-3">
+                  Office Online necesita que el archivo sea accesible públicamente.
+                  Puedes intentar verlo directamente o continuar con el texto.
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  <a href={absoluteUrl!} target="_blank" rel="noopener noreferrer"
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-white"
+                    style={{ background: "#7c3aed" }}>
+                    Abrir archivo directamente
+                  </a>
+                  {slides.length > 0 && (
+                    <button onClick={() => setMode("slides")}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-white"
+                      style={{ background: "#f59e0b" }}>
+                      Ver en texto
+                    </button>
+                  )}
                 </div>
-                {slides.length > 0 && (
-                  <button
-                    onClick={() => setMode("slides")}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-white flex-shrink-0"
-                    style={{ background: "#f59e0b" }}
-                  >
-                    Ver en texto
-                  </button>
-                )}
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Hint */}
           <p className="text-center text-gray-400 text-xs mt-2 mb-4">
             💡 Usa las flechas del visor para navegar entre diapositivas
           </p>
-
-          {/* Botón continuar */}
           <motion.button
             whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
             onClick={onContinue}
@@ -191,9 +237,79 @@ export default function PresentationViewer({ pptxUrl, slides = [], title, onCont
       )}
 
       {/* ══════════════════════════════════════════════════════════════════════
-          MODO B: Carrusel de texto (fallback o cuando no hay PPTX)
+          MODO: PDF (visor nativo del navegador)
       ══════════════════════════════════════════════════════════════════════ */}
-      {(mode === "slides" || (!pptxUrl && slides.length > 0)) && slides.length > 0 && (
+      {mode === "pdf" && absoluteUrl && (
+        <div>
+          <div
+            className="relative rounded-3xl overflow-hidden border-2"
+            style={{ height: 520, borderColor: "#e5e7eb", boxShadow: "0 8px 32px rgba(0,0,0,0.10)" }}
+          >
+            {/* Intentar con iframe (Chrome, Edge, Firefox tienen visor nativo) */}
+            <iframe
+              src={`${absoluteUrl}#toolbar=1&view=FitH`}
+              title={`PDF: ${title}`}
+              className="w-full h-full"
+              style={{ border: "none" }}
+            />
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <p className="text-xs text-gray-400 flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5" />
+              Documento PDF — usa la barra del visor para navegar
+            </p>
+            <a href={absoluteUrl} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold"
+              style={{ background: "#E1EFFF", color: "#4587a9" }}>
+              <ExternalLink className="w-3.5 h-3.5" />
+              Abrir en nueva pestaña
+            </a>
+          </div>
+          <motion.button
+            whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+            onClick={onContinue}
+            className="w-full py-4 rounded-2xl font-extrabold text-white text-base flex items-center justify-center gap-3 mt-4"
+            style={{ background: "linear-gradient(135deg,#FFB37B,#ff9450)", boxShadow: "0 4px 20px rgba(255,148,80,0.40)" }}
+          >
+            ¡Ya leí el PDF, empezar actividad! 🚀
+          </motion.button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          MODO: Imagen
+      ══════════════════════════════════════════════════════════════════════ */}
+      {mode === "image" && absoluteUrl && (
+        <div>
+          <div className="rounded-3xl overflow-hidden border-2 border-gray-100 mb-4"
+            style={{ boxShadow: "0 8px 32px rgba(0,0,0,0.10)" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={absoluteUrl}
+              alt={title}
+              className="w-full object-contain max-h-[520px]"
+              style={{ background: "#f8f9fa" }}
+            />
+          </div>
+          <p className="text-xs text-gray-400 flex items-center gap-1.5 mb-4">
+            <ImageIcon className="w-3.5 h-3.5" />
+            Imagen del tema
+          </p>
+          <motion.button
+            whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+            onClick={onContinue}
+            className="w-full py-4 rounded-2xl font-extrabold text-white text-base flex items-center justify-center gap-3"
+            style={{ background: "linear-gradient(135deg,#FFB37B,#ff9450)", boxShadow: "0 4px 20px rgba(255,148,80,0.40)" }}
+          >
+            ¡Ya vi la imagen, empezar actividad! 🚀
+          </motion.button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          MODO: Carrusel de texto (fallback)
+      ══════════════════════════════════════════════════════════════════════ */}
+      {mode === "slides" && slides.length > 0 && (
         <div>
           {/* Barra de progreso */}
           <div className="h-2 bg-gray-100 rounded-full mb-4 overflow-hidden">
@@ -205,7 +321,6 @@ export default function PresentationViewer({ pptxUrl, slides = [], title, onCont
             />
           </div>
 
-          {/* Slide */}
           <AnimatePresence mode="wait" custom={direction}>
             <motion.div
               key={current}
@@ -265,7 +380,6 @@ export default function PresentationViewer({ pptxUrl, slides = [], title, onCont
             >
               <ChevronLeft className="w-4 h-4" /> Anterior
             </button>
-
             <div className="flex items-center gap-1.5 flex-wrap justify-center">
               {slides.map((_, i) => (
                 <button key={i} onClick={() => goTo(i)}
@@ -274,7 +388,6 @@ export default function PresentationViewer({ pptxUrl, slides = [], title, onCont
                 />
               ))}
             </div>
-
             {isLast ? (
               <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
                 onClick={onContinue}
@@ -292,7 +405,6 @@ export default function PresentationViewer({ pptxUrl, slides = [], title, onCont
               </button>
             )}
           </div>
-
           {!isLast && (
             <div className="text-center mt-3">
               <button onClick={() => goTo(slides.length - 1)}
@@ -306,7 +418,7 @@ export default function PresentationViewer({ pptxUrl, slides = [], title, onCont
       )}
 
       {/* ══ Sin contenido ══ */}
-      {!pptxUrl && slides.length === 0 && (
+      {!absoluteUrl && slides.length === 0 && (
         <div className="rounded-3xl p-12 text-center bg-gray-50 border-2 border-dashed border-gray-200 mb-4">
           <span className="text-5xl mb-3 block">📂</span>
           <p className="text-gray-400 font-semibold">No hay presentación para esta actividad</p>

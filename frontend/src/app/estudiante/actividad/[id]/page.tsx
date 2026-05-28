@@ -108,7 +108,7 @@ export default function ActividadPage() {
 
   const { token, user, active_student_id, activeSession, _hasHydrated, setActiveSession } =
     useSessionStore();
-  useSensoryProfile(token, active_student_id);
+  const { isHighContrast } = useSensoryProfile(token, active_student_id);
 
   // ── State ─────────────────────────────────────────────────────────────────
   const [activity,         setActivity]         = useState<ActivityResponse | null>(null);
@@ -237,14 +237,20 @@ export default function ActividadPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-br from-soft-blue via-white to-soft-purple student-shell">
+    <div className="min-h-screen student-shell"
+      style={{ background: isHighContrast ? "#0F172A" : undefined }}
+    >
       <CalmingScreen />
       {/* Emotion monitoring active from the moment the student opens the activity,
           including while viewing slides */}
       <EmotionDetector active={!completed} />
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
-      <header className="bg-white/80 backdrop-blur-sm border-b border-gray-100 px-4 sm:px-6 py-4">
+      <header className="px-4 sm:px-6 py-4 backdrop-blur-sm border-b"
+        style={{
+          background: isHighContrast ? "#1E293B" : "rgba(255,255,255,0.85)",
+          borderColor: isHighContrast ? "#334155" : "#f3f4f6",
+        }}>
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
           <button
             onClick={() => router.push("/estudiante")}
@@ -411,59 +417,135 @@ export default function ActividadPage() {
                 exit={{ opacity: 0, x: -40 }}
                 transition={{ duration: 0.3 }}
               >
-                <div className="card-kid mb-6">
-                  <p className="text-kid-lg font-bold text-gray-700 text-center">
+                {/* ── Tarjeta de la pregunta ── */}
+                <div
+                  className="rounded-3xl p-6 mb-6 shadow-sm"
+                  style={{
+                    background:  isHighContrast ? "#1E293B" : "white",
+                    border:      isHighContrast ? "2px solid #38BDF8" : "2px solid #E1EFFF",
+                    boxShadow:   isHighContrast ? "0 0 24px rgba(56,189,248,0.15)" : "0 4px 20px rgba(127,179,213,0.12)",
+                  }}
+                >
+                  <p className="text-kid-lg font-bold text-center"
+                    style={{ color: isHighContrast ? "#F1F5F9" : "#34495E" }}>
                     {questions[currentQuestion].pregunta}
                   </p>
                   {showHint && questions[currentQuestion].pista && (
                     <motion.p
                       initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-                      className="text-center text-primary-500 mt-3 text-sm"
+                      className="text-center mt-3 text-sm font-semibold"
+                      style={{ color: isHighContrast ? "#7DD3FC" : "#7FB3D5" }}
                     >
                       💡 {questions[currentQuestion].pista}
                     </motion.p>
                   )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {questions[currentQuestion].opciones?.map((opt: string, i: number) => {
-                    const isSel    = selectedAnswer === i;
-                    const isCorr   = i === questions[currentQuestion].respuesta_correcta;
-                    let cls = "bg-white border-gray-200 hover:border-primary-300 hover:bg-primary-50";
-                    if (showFeedback && isSel && isCorr)   cls = "bg-green-50 border-green-400";
-                    else if (showFeedback && isSel)        cls = "bg-red-50 border-red-400";
-                    else if (showFeedback && isCorr)       cls = "bg-green-50 border-green-300";
-                    return (
-                      <motion.button key={i}
-                        whileHover={!showFeedback ? { scale: 1.02 } : {}}
-                        whileTap={!showFeedback  ? { scale: 0.98 } : {}}
-                        onClick={() => handleAnswer(i)}
-                        disabled={showFeedback}
-                        className={`p-5 rounded-kid-lg border-2 text-left text-kid-base font-semibold text-gray-700 transition-all ${cls}`}
-                      >
-                        <span className="inline-block w-8 h-8 rounded-full bg-gray-100 text-center text-sm leading-8 mr-2 font-bold">
-                          {String.fromCharCode(65 + i)}
-                        </span>
-                        {opt}
-                        {showFeedback && isSel && isCorr  && <span className="float-right text-green-500 text-2xl">✓</span>}
-                        {showFeedback && isSel && !isCorr && <span className="float-right text-red-500 text-2xl">✗</span>}
-                      </motion.button>
-                    );
-                  })}
-                </div>
+
+                {/* ── Opciones estilo Kahoot ── */}
+                {/* Colores fijos por posición (como Kahoot): rojo, azul, amarillo, verde */}
+                {(() => {
+                  const OPTION_COLORS = isHighContrast
+                    ? [
+                        { bg: "#7F1D1D", border: "#F87171", text: "#FECACA", label: "#F87171" },
+                        { bg: "#1E3A5F", border: "#60A5FA", text: "#BFDBFE", label: "#60A5FA" },
+                        { bg: "#78350F", border: "#FCD34D", text: "#FEF3C7", label: "#FCD34D" },
+                        { bg: "#14532D", border: "#4ADE80", text: "#DCFCE7", label: "#4ADE80" },
+                      ]
+                    : [
+                        { bg: "#FFF1F2", border: "#FDA4AF", text: "#374151", label: "#E11D48" },
+                        { bg: "#EFF6FF", border: "#93C5FD", text: "#374151", label: "#1D4ED8" },
+                        { bg: "#FFFBEB", border: "#FCD34D", text: "#374151", label: "#D97706" },
+                        { bg: "#F0FDF4", border: "#86EFAC", text: "#374151", label: "#16A34A" },
+                      ];
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {questions[currentQuestion].opciones?.map((opt: string, i: number) => {
+                        const isSel  = selectedAnswer === i;
+                        const isCorr = i === questions[currentQuestion].respuesta_correcta;
+                        const col    = OPTION_COLORS[i];
+
+                        // Estilos según estado de feedback
+                        let bg     = col.bg;
+                        let border = col.border;
+                        if (showFeedback && isSel && isCorr) {
+                          bg = isHighContrast ? "#14532D" : "#DCFCE7";
+                          border = "#22C55E";
+                        } else if (showFeedback && isSel && !isCorr) {
+                          bg = isHighContrast ? "#7F1D1D" : "#FEE2E2";
+                          border = "#EF4444";
+                        } else if (showFeedback && isCorr) {
+                          bg = isHighContrast ? "#14532D" : "#DCFCE7";
+                          border = "#22C55E";
+                        }
+
+                        return (
+                          <motion.button key={i}
+                            whileHover={!showFeedback ? { scale: 1.02, y: -2 } : {}}
+                            whileTap={!showFeedback  ? { scale: 0.98 } : {}}
+                            onClick={() => handleAnswer(i)}
+                            disabled={showFeedback}
+                            className="p-5 rounded-2xl border-2 text-left transition-all flex items-center gap-3"
+                            style={{ background: bg, borderColor: border }}
+                          >
+                            {/* Letra (A B C D) */}
+                            <span
+                              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0"
+                              style={{
+                                background: border,
+                                color: isHighContrast ? "#0F172A" : "white",
+                              }}
+                            >
+                              {String.fromCharCode(65 + i)}
+                            </span>
+                            {/* Texto de la opción */}
+                            <span
+                              className="flex-1 text-kid-base font-semibold leading-snug"
+                              style={{ color: isHighContrast ? col.text : "#374151" }}
+                            >
+                              {opt}
+                            </span>
+                            {/* Icono de feedback */}
+                            {showFeedback && isSel && isCorr  && (
+                              <span className="text-2xl flex-shrink-0">✅</span>
+                            )}
+                            {showFeedback && isSel && !isCorr && (
+                              <span className="text-2xl flex-shrink-0">❌</span>
+                            )}
+                            {showFeedback && !isSel && isCorr && (
+                              <span className="text-2xl flex-shrink-0">⭐</span>
+                            )}
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                {/* ── Botones de ayuda ── */}
                 <div className="flex justify-center gap-4 mt-6">
                   {!showHint && questions[currentQuestion].pista && (
                     <button onClick={() => setShowHint(true)}
-                      className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-primary-500 transition-colors"
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-colors"
+                      style={{
+                        color:      isHighContrast ? "#7DD3FC" : "#7f8c8d",
+                        background: isHighContrast ? "rgba(56,189,248,0.10)" : "transparent",
+                        border:     isHighContrast ? "1.5px solid rgba(56,189,248,0.30)" : "none",
+                      }}
                     >
                       <HelpCircle className="w-5 h-5" />
-                      <span className="text-sm font-semibold">Necesito una pista</span>
+                      Necesito una pista
                     </button>
                   )}
                   <button onClick={() => handleAnswer(-1)}
-                    className="flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-gray-600 transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-colors"
+                    style={{
+                      color:      isHighContrast ? "#94A3B8" : "#a0aec0",
+                      background: isHighContrast ? "rgba(148,163,184,0.10)" : "transparent",
+                      border:     isHighContrast ? "1.5px solid rgba(148,163,184,0.20)" : "none",
+                    }}
                   >
                     <SkipForward className="w-5 h-5" />
-                    <span className="text-sm font-semibold">Saltar</span>
+                    Saltar
                   </button>
                 </div>
               </motion.div>
