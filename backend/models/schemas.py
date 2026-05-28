@@ -743,6 +743,12 @@ class SendLinkPayload(BaseModel):
     meeting_link: str
 
 
+class AcceptSessionPayload(BaseModel):
+    """Datos opcionales que el profesional proporciona al aceptar la solicitud."""
+    scheduled_at:       Optional[datetime] = None
+    professional_notes: Optional[str]      = None
+
+
 class SesionAsistidaResponse(BaseModel):
     id_sesion_asistida:      str
     id_tutor:                str
@@ -755,6 +761,8 @@ class SesionAsistidaResponse(BaseModel):
     accepted_at:             Optional[datetime] = None
     closed_at:               Optional[datetime] = None
     created_at:              Optional[datetime] = None
+    scheduled_at:            Optional[datetime] = None   # horario agendado por el profesional
+    professional_notes:      Optional[str]      = None   # indicaciones del profesional
     # Joined fields (populated by JOIN queries)
     tutor_name:              Optional[str] = None
     professional_name:       Optional[str] = None

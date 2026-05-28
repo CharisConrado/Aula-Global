@@ -513,9 +513,14 @@ export const api = {
   getAssistedSessions: (token: string) =>
     apiFetch<AssistedSessionResponse[]>("/api/assisted-sessions", { token }),
 
-  acceptAssistedSession: (token: string, sessionId: string) =>
+  acceptAssistedSession: (
+    token: string,
+    sessionId: string,
+    data?: { scheduled_at?: string; professional_notes?: string }
+  ) =>
     apiFetch<AssistedSessionResponse>(`/api/assisted-sessions/${sessionId}/accept`, {
       method: "PUT",
+      body: data ?? {},
       token,
     }),
 
@@ -853,6 +858,8 @@ export interface AssistedSessionResponse {
   accepted_at:             string | null;
   closed_at:               string | null;
   created_at:              string | null;
+  scheduled_at:            string | null;
+  professional_notes:      string | null;
   tutor_name:              string | null;
   professional_name:       string | null;
   student_name:            string | null;

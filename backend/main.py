@@ -44,6 +44,15 @@ def _run_migrations():
                     ADD CONSTRAINT professional_verification_status_check
                     CHECK (verification_status IN ('pendiente', 'aprobado', 'rechazado'))
             """))
+            # Nuevas columnas en sesion_asistida (idempotentes)
+            conn.execute(_text("""
+                ALTER TABLE sesion_asistida
+                    ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ
+            """))
+            conn.execute(_text("""
+                ALTER TABLE sesion_asistida
+                    ADD COLUMN IF NOT EXISTS professional_notes TEXT
+            """))
             conn.commit()
     except Exception as e:
         print(f"[migration] advertencia: {e}")

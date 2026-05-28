@@ -74,6 +74,11 @@ export default function ProfesionalPage() {
   const [submittingKind,  setSubmittingKind]  = useState<"accept" | "reject" | "link" | "close" | null>(null);
   const [refreshing,      setRefreshing]      = useState(false);
 
+  // ── Accept form state (inline, per card) ──────────────────────────────────
+  const [acceptFormId,    setAcceptFormId]    = useState<string | null>(null);
+  const [scheduleInput,   setScheduleInput]   = useState<Record<string, string>>({});
+  const [profNotesInput,  setProfNotesInput]  = useState<Record<string, string>>({});
+
   // ── Load ──────────────────────────────────────────────────────────────────
   const loadSessions = useCallback(async (showRefresh = false) => {
     if (!token) return;
@@ -117,8 +122,13 @@ export default function ProfesionalPage() {
     }
   };
 
-  const handleAccept = (id: string) =>
-    run(id, "accept", () => api.acceptAssistedSession(token!, id));
+  const handleAccept = (id: string) => {
+    const scheduled_at    = scheduleInput[id]  ? new Date(scheduleInput[id]).toISOString()  : undefined;
+    const professional_notes = profNotesInput[id]?.trim() || undefined;
+    run(id, "accept", () =>
+      api.acceptAssistedSession(token!, id, { scheduled_at, professional_notes })
+    ).then(() => setAcceptFormId(null));
+  };
 
   const handleReject = (id: string) =>
     run(id, "reject", () => api.rejectAssistedSession(token!, id));
@@ -327,10 +337,10 @@ export default function ProfesionalPage() {
                       </div>
                     </div>
 
-                    {/* ── Notes ── */}
+                    {/* ── Notas del tutor ── */}
                     {s.notes && (
                       <div
-                        className="rounded-xl p-4 mb-5 flex items-start gap-2"
+                        className="rounded-xl p-4 mb-4 flex items-start gap-2"
                         style={{ background: "#FFFBEB", border: "1px solid #FCD34D" }}
                       >
                         <span className="text-sm flex-shrink-0">📝</span>
@@ -339,6 +349,37 @@ export default function ProfesionalPage() {
                             Notas del tutor
                           </p>
                           <p className="text-sm" style={{ color: "#374151" }}>{s.notes}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Horario agendado ── */}
+                    {s.scheduled_at && (
+                      <div className="rounded-xl p-4 mb-4 flex items-center gap-3"
+                        style={{ background: "#EFF6FF", border: "1px solid #93C5FD" }}>
+                        <span className="text-lg flex-shrink-0">📅</span>
+                        <div>
+                          <p className="text-xs font-bold" style={{ color: "#1D4ED8" }}>Horario agendado</p>
+                          <p className="text-sm font-semibold" style={{ color: "#374151" }}>
+                            {new Date(s.scheduled_at).toLocaleDateString("es-CO", {
+                              weekday: "long", day: "numeric", month: "long", year: "numeric",
+                              hour: "2-digit", minute: "2-digit",
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Indicaciones del profesional ── */}
+                    {s.professional_notes && (
+                      <div className="rounded-xl p-4 mb-4 flex items-start gap-2"
+                        style={{ background: "#F0FDF4", border: "1px solid #86EFAC" }}>
+                        <span className="text-sm flex-shrink-0">📋</span>
+                        <div>
+                          <p className="text-xs font-bold mb-0.5" style={{ color: "#15803D" }}>
+                            Tus indicaciones
+                          </p>
+                          <p className="text-sm" style={{ color: "#374151" }}>{s.professional_notes}</p>
                         </div>
                       </div>
                     )}
@@ -368,34 +409,99 @@ export default function ProfesionalPage() {
                     )}
 
                     {/* ── Actions ── */}
-                    <div className="flex flex-wrap gap-3">
+                    <div className="flex flex-wrap gap-3 w-full">
 
-                      {/* PENDIENTE → Accept + Reject */}
+                      {/* PENDIENTE → form + Reject */}
                       {s.status === "pendiente" && (
-                        <>
-                          <button
-                            onClick={() => handleAccept(s.id_sesion_asistida)}
-                            disabled={isBusy}
-                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
-                            style={{ background: "linear-gradient(135deg,#22C55E,#16A34A)", opacity: isBusy ? 0.6 : 1 }}
-                          >
-                            {isBusy && submittingKind === "accept"
-                              ? <Loader2 className="w-4 h-4 animate-spin" />
-                              : <CheckCircle className="w-4 h-4" />}
-                            Aceptar solicitud
-                          </button>
-                          <button
-                            onClick={() => handleReject(s.id_sesion_asistida)}
-                            disabled={isBusy}
-                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
-                            style={{ background: "#FEF2F2", color: "#B91C1C", border: "1.5px solid #FCA5A5", opacity: isBusy ? 0.6 : 1 }}
-                          >
-                            {isBusy && submittingKind === "reject"
-                              ? <Loader2 className="w-4 h-4 animate-spin" />
-                              : <XCircle className="w-4 h-4" />}
-                            Rechazar
-                          </button>
-                        </>
+                        <div className="w-full space-y-3">
+                          {/* Botón que abre/cierra el form de aceptación */}
+                          {acceptFormId !== s.id_sesion_asistida ? (
+                            <div className="flex flex-wrap gap-3">
+                              <button
+                                onClick={() => setAcceptFormId(s.id_sesion_asistida)}
+                                disabled={isBusy}
+                                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+                                style={{ background: "linear-gradient(135deg,#22C55E,#16A34A)", opacity: isBusy ? 0.6 : 1 }}
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                                Aceptar solicitud
+                              </button>
+                              <button
+                                onClick={() => handleReject(s.id_sesion_asistida)}
+                                disabled={isBusy}
+                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
+                                style={{ background: "#FEF2F2", color: "#B91C1C", border: "1.5px solid #FCA5A5", opacity: isBusy ? 0.6 : 1 }}
+                              >
+                                {isBusy && submittingKind === "reject"
+                                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                                  : <XCircle className="w-4 h-4" />}
+                                Rechazar
+                              </button>
+                            </div>
+                          ) : (
+                            /* Formulario de aceptación */
+                            <div className="rounded-2xl p-5 space-y-4"
+                              style={{ background: "#F0FDF4", border: "1.5px solid #86EFAC" }}>
+                              <p className="text-sm font-extrabold" style={{ color: "#15803D" }}>
+                                ✅ Confirmar aceptación
+                              </p>
+
+                              {/* Horario */}
+                              <div>
+                                <label className="text-xs font-bold block mb-1.5" style={{ color: "#374151" }}>
+                                  📅 Horario de la consulta
+                                  <span className="font-normal ml-1" style={{ color: "#9CA3AF" }}>(opcional)</span>
+                                </label>
+                                <input
+                                  type="datetime-local"
+                                  value={scheduleInput[s.id_sesion_asistida] || ""}
+                                  onChange={e => setScheduleInput(prev => ({ ...prev, [s.id_sesion_asistida]: e.target.value }))}
+                                  className="w-full rounded-xl px-4 py-2.5 text-sm outline-none"
+                                  style={{ border: "1.5px solid #86EFAC", background: "white", color: "#374151" }}
+                                />
+                              </div>
+
+                              {/* Indicaciones */}
+                              <div>
+                                <label className="text-xs font-bold block mb-1.5" style={{ color: "#374151" }}>
+                                  📋 Indicaciones para el tutor y estudiante
+                                  <span className="font-normal ml-1" style={{ color: "#9CA3AF" }}>(opcional)</span>
+                                </label>
+                                <textarea
+                                  rows={3}
+                                  value={profNotesInput[s.id_sesion_asistida] || ""}
+                                  onChange={e => setProfNotesInput(prev => ({ ...prev, [s.id_sesion_asistida]: e.target.value }))}
+                                  placeholder="Ej: El niño debe descansar 30 min antes, traer sus últimas evaluaciones, usar ropa cómoda…"
+                                  className="w-full rounded-xl px-4 py-2.5 text-sm outline-none resize-none"
+                                  style={{ border: "1.5px solid #86EFAC", background: "white", color: "#374151" }}
+                                />
+                              </div>
+
+                              {/* Botones confirmar / cancelar */}
+                              <div className="flex gap-3">
+                                <button
+                                  onClick={() => handleAccept(s.id_sesion_asistida)}
+                                  disabled={isBusy}
+                                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+                                  style={{ background: "linear-gradient(135deg,#22C55E,#16A34A)", opacity: isBusy ? 0.6 : 1 }}
+                                >
+                                  {isBusy && submittingKind === "accept"
+                                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                                    : <CheckCircle className="w-4 h-4" />}
+                                  Confirmar
+                                </button>
+                                <button
+                                  onClick={() => setAcceptFormId(null)}
+                                  disabled={isBusy}
+                                  className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                                  style={{ background: "white", color: "#6B7280", border: "1.5px solid #D1D5DB" }}
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )}
 
                       {/* ACEPTADA → Send link form */}

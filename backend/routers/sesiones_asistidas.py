@@ -10,7 +10,7 @@ Flujo:
   5. Profesional → PUT /{id}/close  (cierra la sesión)
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -19,6 +19,7 @@ from models.schemas import (
     SesionAsistidaCreate,
     SesionAsistidaResponse,
     SendLinkPayload,
+    AcceptSessionPayload,
     TokenData,
     RolUsuario,
 )
@@ -63,7 +64,8 @@ _SELECT = """
            t.full_name   AS tutor_name,
            p.full_name   AS professional_name,
            st.full_name  AS student_name,
-           p.speciality  AS professional_speciality
+           p.speciality  AS professional_speciality,
+           sa.scheduled_at, sa.professional_notes
     FROM   sesion_asistida sa
     LEFT JOIN tutor       t  ON sa.id_tutor       = t.id_tutor
     LEFT JOIN professional p  ON sa.id_professional = p.id_professional
@@ -88,6 +90,8 @@ def _to_response(r) -> SesionAsistidaResponse:
         professional_name       = r[12],
         student_name            = r[13],
         professional_speciality = r[14],
+        scheduled_at            = r[15],
+        professional_notes      = r[16],
     )
 
 
@@ -148,6 +152,9 @@ async def listar_sesiones(
     elif cu.rol == RolUsuario.profesional:
         query += " WHERE sa.id_professional = CAST(:uid AS uuid)"
         params["uid"] = cu.user_id
+    elif cu.rol == RolUsuario.estudiante:
+        query += " WHERE sa.id_student = CAST(:uid AS uuid)"
+        params["uid"] = cu.user_id
 
     query += " ORDER BY sa.created_at DESC"
     rows = db.execute(text(query), params).fetchall()
@@ -166,18 +173,26 @@ async def obtener_sesion(
 @router.put("/{session_id}/accept", response_model=SesionAsistidaResponse)
 async def aceptar_sesion(
     session_id: str,
+    data:       AcceptSessionPayload = Body(default_factory=AcceptSessionPayload),
     db:         Session  = Depends(get_db),
     cu:         TokenData = Depends(require_role(RolUsuario.profesional, RolUsuario.admin)),
 ):
-    """El profesional acepta la solicitud (estado: pendiente → aceptada)."""
+    """El profesional acepta la solicitud, opcionalmente con horario e indicaciones."""
     result = db.execute(
         text("""
             UPDATE sesion_asistida
-               SET status = 'aceptada', accepted_at = NOW()
+               SET status             = 'aceptada',
+                   accepted_at        = NOW(),
+                   scheduled_at       = :scheduled_at,
+                   professional_notes = :professional_notes
              WHERE id_sesion_asistida = CAST(:id AS uuid)
                AND status = 'pendiente'
         """),
-        {"id": session_id},
+        {
+            "id":                 session_id,
+            "scheduled_at":       data.scheduled_at,
+            "professional_notes": data.professional_notes,
+        },
     )
     db.commit()
     if result.rowcount == 0:

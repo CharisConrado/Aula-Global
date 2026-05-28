@@ -1140,12 +1140,41 @@ export default function TutorPage() {
                             )}
                           </div>
 
-                          {/* Notes */}
+                          {/* Notes del tutor */}
                           {s.notes && (
-                            <p className="text-xs rounded-lg px-3 py-2 mb-4"
+                            <p className="text-xs rounded-lg px-3 py-2 mb-3"
                               style={{ background: "#FFFBEB", color: "#D97706", border: "1px solid #FCD34D" }}>
                               📝 {s.notes}
                             </p>
+                          )}
+
+                          {/* Horario agendado */}
+                          {s.scheduled_at && (
+                            <div className="rounded-xl px-3 py-2.5 mb-3 flex items-center gap-2"
+                              style={{ background: "#EFF6FF", border: "1px solid #93C5FD" }}>
+                              <span className="text-base">📅</span>
+                              <div>
+                                <p className="text-[10px] font-bold" style={{ color: "#1D4ED8" }}>Horario de la consulta</p>
+                                <p className="text-xs font-semibold" style={{ color: "#374151" }}>
+                                  {new Date(s.scheduled_at).toLocaleDateString("es-CO", {
+                                    weekday: "long", day: "numeric", month: "long",
+                                    year: "numeric", hour: "2-digit", minute: "2-digit",
+                                  })}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Indicaciones del profesional */}
+                          {s.professional_notes && (
+                            <div className="rounded-xl px-3 py-2.5 mb-3 flex items-start gap-2"
+                              style={{ background: "#F0FDF4", border: "1px solid #86EFAC" }}>
+                              <span className="text-base flex-shrink-0">📋</span>
+                              <div>
+                                <p className="text-[10px] font-bold" style={{ color: "#15803D" }}>Indicaciones del profesional</p>
+                                <p className="text-xs" style={{ color: "#374151" }}>{s.professional_notes}</p>
+                              </div>
+                            </div>
                           )}
 
                           {/* Meeting link — tutor can join */}

@@ -11,9 +11,10 @@ import {
   type ActivityResponse,
   type SubjectResponse,
   type StudentResponse,
+  type AssistedSessionResponse,
 } from "@/lib/api";
 import CalmingScreen from "@/components/ui/CalmingScreen";
-import { BookOpen, Star, LogOut, Play, CheckCircle2, Circle, ChevronRight, Trophy, Target, Clock, Menu } from "lucide-react";
+import { BookOpen, Star, LogOut, Play, CheckCircle2, Circle, ChevronRight, Trophy, Target, Clock, Menu, Stethoscope, ExternalLink } from "lucide-react";
 
 /* ══════════════════════════════════════════════════════════════
    TIPOS
@@ -75,6 +76,7 @@ export default function EstudiantePage() {
   const [progresses, setProgresses] = useState<SubjectProgress[]>([]);
   const [selected,   setSelected]   = useState<SubjectProgress | null>(null);
   const [loading,    setLoading]    = useState(true);
+  const [consultas,  setConsultas]  = useState<AssistedSessionResponse[]>([]);
 
   // Aplica el perfil sensorial y expone helpers de contraste
   const { isHighContrast, isLowContrast } = useSensoryProfile(token, active_student_id);
@@ -126,6 +128,12 @@ export default function EstudiantePage() {
           start_time: session.start_time,
         });
       }
+
+      // Cargar consultas asistidas activas
+      try {
+        const cons = await api.getAssistedSessions(token);
+        setConsultas(cons.filter(c => !["finalizada", "rechazada"].includes(c.status)));
+      } catch {}
     } catch (err) {
       console.error("Error cargando datos del estudiante:", err);
     } finally {
@@ -387,6 +395,105 @@ export default function EstudiantePage() {
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.25 }}
               >
+
+                {/* ── Consultas activas ── */}
+                {consultas.length > 0 && (
+                  <div className="mb-6 space-y-3">
+                    {consultas.map((c, i) => (
+                      <motion.div
+                        key={c.id_sesion_asistida}
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.06 }}
+                        className="rounded-2xl p-4"
+                        style={{
+                          background: c.meeting_link
+                            ? "linear-gradient(135deg,#EFF6FF,#E1EFFF)"
+                            : "linear-gradient(135deg,#F0FDF4,#ECFDF5)",
+                          border: c.meeting_link ? "1.5px solid #93C5FD" : "1.5px solid #86EFAC",
+                          boxShadow: "0 2px 12px rgba(127,179,213,0.10)",
+                        }}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div
+                            className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 text-xl"
+                            style={{ background: c.meeting_link ? "#DBEAFE" : "#D1FAE5" }}
+                          >
+                            🩺
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-extrabold text-sm" style={{ color: "#1D4ED8" }}>
+                              Consulta con {c.professional_name || "tu especialista"}
+                            </p>
+                            <p className="text-xs" style={{ color: "#6B7280" }}>
+                              {c.professional_speciality || "Especialista"}
+                            </p>
+
+                            {/* Horario */}
+                            {c.scheduled_at && (
+                              <div className="mt-2 flex items-center gap-1.5">
+                                <span className="text-sm">📅</span>
+                                <p className="text-xs font-semibold" style={{ color: "#374151" }}>
+                                  {new Date(c.scheduled_at).toLocaleDateString("es-CO", {
+                                    weekday: "long", day: "numeric", month: "long",
+                                    hour: "2-digit", minute: "2-digit",
+                                  })}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Indicaciones del profesional */}
+                            {c.professional_notes && (
+                              <div className="mt-2 rounded-xl px-3 py-2"
+                                style={{ background: "rgba(255,255,255,0.7)", border: "1px solid #BBF7D0" }}>
+                                <p className="text-[10px] font-bold mb-0.5" style={{ color: "#15803D" }}>
+                                  📋 Indicaciones de tu especialista
+                                </p>
+                                <p className="text-xs" style={{ color: "#374151" }}>
+                                  {c.professional_notes}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Notas del tutor */}
+                            {c.notes && (
+                              <p className="mt-2 text-xs rounded-lg px-2 py-1"
+                                style={{ background: "rgba(255,251,235,0.8)", color: "#D97706", border: "1px solid #FCD34D" }}>
+                                📝 {c.notes}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Botón de unirse si hay link */}
+                        {c.meeting_link && (
+                          <a
+                            href={c.meeting_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-3 w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-extrabold text-white transition-all"
+                            style={{ background: "linear-gradient(135deg,#3B82F6,#1D4ED8)", boxShadow: "0 4px 14px rgba(59,130,246,0.40)" }}
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            ¡Unirse a la consulta! 🎉
+                          </a>
+                        )}
+
+                        {/* Estado si aún no hay link */}
+                        {!c.meeting_link && (
+                          <div className="mt-3 text-center">
+                            <p className="text-xs font-semibold" style={{ color: "#15803D" }}>
+                              {c.status === "pendiente"
+                                ? "⏳ Esperando confirmación del especialista…"
+                                : "✅ Aceptada · Pronto recibirás el enlace de la reunión"}
+                            </p>
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Trofeo si completó algo */}
                 {totalCompleted > 0 && (
                   <motion.div
