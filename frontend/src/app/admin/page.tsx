@@ -338,6 +338,8 @@ export default function AdminPage() {
   });
   const [profBanner, setProfBanner] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
   const [profSubmitting, setProfSubmitting] = useState(false);
+  const [seedingProfs, setSeedingProfs] = useState(false);
+  const [seedBanner, setSeedBanner] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
 
   /* ── Tab: estudiantes ── */
   const [students, setStudents] = useState<StudentResponse[]>([]);
@@ -543,6 +545,32 @@ export default function AdminPage() {
       setProfBanner({ type: "err", msg: err instanceof Error ? err.message : "Error" });
     } finally {
       setProfSubmitting(false);
+    }
+  };
+
+  const handleSeedProfessionals = async () => {
+    setSeedingProfs(true);
+    setSeedBanner(null);
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(
+        `${API_URL}/api/auth/seed-professionals?master_key=aulaglobal-admin-2026`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error al cargar profesionales");
+      setSeedBanner({
+        type: "ok",
+        msg: `${data.message} · Contraseña: ${data.password}`,
+      });
+      // Recargar la lista de profesionales
+      const updated = await api.getProfessionals(token!);
+      setProfessionals(updated);
+      setProfsLoaded(true);
+    } catch (err) {
+      setSeedBanner({ type: "err", msg: err instanceof Error ? err.message : "Error desconocido" });
+    } finally {
+      setSeedingProfs(false);
     }
   };
 
@@ -1058,6 +1086,46 @@ export default function AdminPage() {
             {/* ══════════════════ PROFESIONALES ══════════════════ */}
             {tab === "profesionales" && (
               <motion.div key="profesionales" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} transition={{ duration: 0.25 }}>
+
+                {/* ── Botón seed + banner ── */}
+                <div className="mb-6 flex flex-col gap-3">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <button
+                      onClick={handleSeedProfessionals}
+                      disabled={seedingProfs}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
+                      style={{
+                        background: seedingProfs ? "#e5e7eb" : "#F0FDF4",
+                        border: "1.5px solid #86EFAC",
+                        color: seedingProfs ? "#9CA3AF" : "#15803D",
+                        cursor: seedingProfs ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {seedingProfs ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Creando profesionales…</>
+                      ) : (
+                        <><span>🧪</span> Cargar profesionales de prueba</>
+                      )}
+                    </button>
+                    <p className="text-xs" style={{ color: "#a0aec0" }}>
+                      Crea 10 profesionales de prueba (2 por especialidad). Solo funciona una vez.
+                    </p>
+                  </div>
+
+                  {seedBanner && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+                      className="rounded-xl px-4 py-3 text-sm font-semibold flex items-start gap-2"
+                      style={seedBanner.type === "ok"
+                        ? { background: "#F0FDF4", color: "#15803D", border: "1px solid #86EFAC" }
+                        : { background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FCA5A5" }}
+                    >
+                      <span className="flex-shrink-0">{seedBanner.type === "ok" ? "✅" : "⚠️"}</span>
+                      <span>{seedBanner.msg}</span>
+                    </motion.div>
+                  )}
+                </div>
+
                 {profsLoading ? (
                   <div className="flex items-center justify-center py-24">
                     <Loader2 className="w-10 h-10 animate-spin" style={{ color: "#7FB3D5" }} />
