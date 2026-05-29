@@ -20,6 +20,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSessionStore } from "@/store/sessionStore";
+import { api } from "@/lib/api";
 import {
   MonitoringWebSocket,
   type MonitoringData,
@@ -73,6 +74,7 @@ export default function EmotionDetector({ active = false }: Props) {
   const currentAttentionRef   = useRef<number>(0.5);      // idem para atención
   const clickTimestampsRef    = useRef<number[]>([]);
   const lastLandmarkTimeRef   = useRef<number>(0);        // ts del último onResults con cara detectada
+  const cameraSessionIdRef    = useRef<string | null>(null); // sesión "monitoreo" activa
   const mountedRef            = useRef(false);
 
   // ── Estado UI ───────────────────────────────────────────────────────────────
@@ -290,6 +292,15 @@ export default function EmotionDetector({ active = false }: Props) {
     faceMeshRef.current = null;
     lastLandmarksRef.current = null;
     emotionBufferRef.current = [];
+
+    // Cerrar la sesión de monitoreo si existe
+    if (cameraSessionIdRef.current) {
+      const sessId = cameraSessionIdRef.current;
+      cameraSessionIdRef.current = null;
+      // useSessionStore.getState() es válido fuera del render cycle
+      const { token: t } = useSessionStore.getState();
+      if (t) api.closeSession(t, sessId, { status: "completada" }).catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -367,6 +378,20 @@ export default function EmotionDetector({ active = false }: Props) {
     // no existe en el DOM (aparece solo cuando permission cambia a "granted").
     // El useEffect(permission) se encarga una vez que React actualice el DOM.
     setPermission("granted"); // ← widget se renderiza → useEffect asigna stream
+
+    // ── Registrar sesión de monitoreo con cámara ───────────────────────────
+    // Se crea una sesión de tipo "monitoreo" independiente de la sesión de
+    // "aprendizaje" ya activa. El backend ya no las cierra entre sí.
+    // Se cierra automáticamente cuando el estudiante apague la cámara (stopAll).
+    if (active_student_id) {
+      api.createSession(token, {
+        id_student:   active_student_id,
+        session_type: "monitoreo",
+        device:       "camara_web",
+      })
+        .then(sess => { cameraSessionIdRef.current = sess.id_session; })
+        .catch(() => { /* no crítico */ });
+    }
 
     // ── rAF draw loop: canvas como pantalla principal ──────────────────────
     // En móvil, <video> dentro de position:fixed puede quedar negro aunque la

@@ -45,14 +45,18 @@ async def crear_sesion(
     if not student:
         raise HTTPException(status_code=404, detail="Estudiante no encontrado o inactivo")
 
-    # Cerrar sesiones activas anteriores
+    # Cerrar sesiones activas anteriores del MISMO tipo solamente.
+    # Esto permite que coexistan sesiones de tipos distintos (p.ej.
+    # "aprendizaje" + "monitoreo") sin cancelarse entre sí.
     db.execute(
         text("""
             UPDATE session SET status = 'interrumpida', end_time = NOW(),
                 duration_sec = EXTRACT(EPOCH FROM (NOW() - start_time))::int
-            WHERE id_student = CAST(:sid AS uuid) AND status = 'activa'
+            WHERE id_student = CAST(:sid AS uuid)
+              AND status = 'activa'
+              AND session_type = :stype
         """),
-        {"sid": data.id_student},
+        {"sid": data.id_student, "stype": data.session_type},
     )
 
     row = db.execute(

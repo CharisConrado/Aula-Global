@@ -959,17 +959,24 @@ export default function TutorPage() {
                                 const statusStyle = STATUS_STYLES[sess.status] || STATUS_STYLES.completada;
                                 const durMin = sess.duration_sec ? Math.round(sess.duration_sec / 60) : null;
 
+                                const SESSION_TYPE_META: Record<string, { icon: string; label: string; bg: string; color: string }> = {
+                                  aprendizaje: { icon: "📚", label: "Aprendizaje",  bg: "#E1EFFF", color: "#4587a9" },
+                                  monitoreo:   { icon: "📷", label: "Con cámara",   bg: "#F0FDF4", color: "#16a34a" },
+                                  evaluacion:  { icon: "📝", label: "Evaluación",   bg: "#FEF9C3", color: "#ca8a04" },
+                                  repaso:      { icon: "🔄", label: "Repaso",       bg: "#F3E8FF", color: "#7c3aed" },
+                                };
+                                const typeMeta = SESSION_TYPE_META[sess.session_type] ?? { icon: "⭐", label: sess.session_type, bg: "#f3f4f6", color: "#6b7280" };
+                                const statusIcon = sess.status === "crisis" ? "🚨" : sess.session_type === "monitoreo" ? "📷" : sess.status === "completada" ? "✅" : sess.status === "activa" ? "🟢" : "⏸️";
+
                                 return (
                                   <div key={sess.id_session} className="rounded-xl overflow-hidden"
-                                    style={{ border: "1.5px solid #f3f4f6" }}>
+                                    style={{ border: sess.session_type === "monitoreo" ? "1.5px solid #BBF7D0" : "1.5px solid #f3f4f6" }}>
                                     <button
                                       className="w-full flex items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50"
                                       onClick={() => loadSessionActivities(sess.id_session)}
                                     >
                                       <div className="flex items-center gap-3">
-                                        <div className="text-xl flex-shrink-0">
-                                          {sess.status === "crisis" ? "🚨" : sess.status === "completada" ? "✅" : sess.status === "activa" ? "🟢" : "⏸️"}
-                                        </div>
+                                        <div className="text-xl flex-shrink-0">{statusIcon}</div>
                                         <div>
                                           <p className="text-xs font-bold" style={{ color: "#34495E" }}>
                                             {sess.start_time ? new Date(sess.start_time).toLocaleDateString("es-CO", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : "—"}
@@ -982,7 +989,10 @@ export default function TutorPage() {
                                             {durMin !== null && (
                                               <span className="text-[10px]" style={{ color: "#a0aec0" }}>⏱ {durMin} min</span>
                                             )}
-                                            <span className="text-[10px] capitalize" style={{ color: "#a0aec0" }}>{sess.session_type}</span>
+                                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                                              style={{ background: typeMeta.bg, color: typeMeta.color }}>
+                                              {typeMeta.icon} {typeMeta.label}
+                                            </span>
                                           </div>
                                         </div>
                                       </div>
