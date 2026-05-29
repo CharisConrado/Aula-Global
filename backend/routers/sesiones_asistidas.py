@@ -161,6 +161,24 @@ async def listar_sesiones(
     return [_to_response(r) for r in rows]
 
 
+@router.get("/by-student/{student_id}", response_model=list[SesionAsistidaResponse])
+async def sesiones_por_estudiante(
+    student_id: str,
+    db:         Session  = Depends(get_db),
+    cu:         TokenData = Depends(get_current_user),
+):
+    """
+    Devuelve todas las sesiones asistidas de un estudiante específico.
+    Usado por el panel del estudiante y por el tutor al supervisar a un estudiante.
+    Accesible por cualquier usuario autenticado.
+    """
+    rows = db.execute(
+        text(_SELECT + " WHERE sa.id_student = CAST(:sid AS uuid) ORDER BY sa.created_at DESC"),
+        {"sid": student_id},
+    ).fetchall()
+    return [_to_response(r) for r in rows]
+
+
 @router.get("/{session_id}", response_model=SesionAsistidaResponse)
 async def obtener_sesion(
     session_id: str,

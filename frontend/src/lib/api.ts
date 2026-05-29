@@ -513,6 +513,9 @@ export const api = {
   getAssistedSessions: (token: string) =>
     apiFetch<AssistedSessionResponse[]>("/api/assisted-sessions", { token }),
 
+  getStudentAssistedSessions: (token: string, studentId: string) =>
+    apiFetch<AssistedSessionResponse[]>(`/api/assisted-sessions/by-student/${studentId}`, { token }),
+
   acceptAssistedSession: (
     token: string,
     sessionId: string,

@@ -131,13 +131,8 @@ export default function EstudiantePage() {
 
       // Cargar consultas asistidas activas para este estudiante
       try {
-        const cons = await api.getAssistedSessions(token);
-        setConsultas(
-          cons.filter(c =>
-            !["finalizada", "rechazada"].includes(c.status) &&
-            c.id_student === active_student_id
-          )
-        );
+        const cons = await api.getStudentAssistedSessions(token, active_student_id);
+        setConsultas(cons.filter(c => !["finalizada", "rechazada"].includes(c.status)));
       } catch {}
     } catch (err) {
       console.error("Error cargando datos del estudiante:", err);
