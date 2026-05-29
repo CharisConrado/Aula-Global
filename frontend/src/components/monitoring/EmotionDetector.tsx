@@ -461,7 +461,11 @@ export default function EmotionDetector({ active = false }: Props) {
         `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
     });
     faceMesh.setOptions({
-      maxNumFaces: 1, refineLandmarks: true,
+      maxNumFaces: 1,
+      // refineLandmarks: false → usa el modelo base (468 pts) en vez del
+      // modelo de atención (478 pts). Para clasificación emocional los
+      // puntos extra no aportan y añadían ~40-50 % de carga de CPU/GPU.
+      refineLandmarks: false,
       minDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
     });
 
@@ -480,22 +484,29 @@ export default function EmotionDetector({ active = false }: Props) {
     });
 
     faceMeshRef.current = faceMesh;
-    const processFrame = async () => {
+
+    // ── Loop de procesamiento limitado a ~12 fps ───────────────────────────
+    // rAF sin límite corría a 60 fps → MediaPipe recibía 60 frames/s, lo que
+    // saturaba la CPU/GPU innecesariamente (la emoción cambia a ~1 fps).
+    // Con setTimeout(~83 ms) bajamos a ≈12 fps: más que suficiente para
+    // detectar expresiones faciales y libera ~80 % de la carga de procesado.
+    const FRAME_MS = 83; // ≈ 12 fps
+    let lastFrameAt = 0;
+    const processFrame = async (ts: number) => {
       if (!mountedRef.current) return;
-      try {
-        // Enviar frame solo si el video está decodificado y listo
-        if (videoRef.current && faceMeshRef.current && videoRef.current.readyState >= 2)
-          // @ts-expect-error — tipo externo
-          await faceMeshRef.current.send({ image: videoRef.current });
-      } catch {
-        // Ignorar errores de frame individuales (ruido, video no listo, etc.)
-        // para que el loop NUNCA muera y la malla no quede congelada.
+      if (ts - lastFrameAt >= FRAME_MS) {
+        lastFrameAt = ts;
+        try {
+          if (videoRef.current && faceMeshRef.current && videoRef.current.readyState >= 2)
+            // @ts-expect-error — tipo externo
+            await faceMeshRef.current.send({ image: videoRef.current });
+        } catch {
+          // Ignorar errores de frame individuales para que el loop nunca muera.
+        }
       }
-      // requestAnimationFrame va SIEMPRE aquí, fuera del try-catch,
-      // así el loop continúa incluso si el frame anterior falló.
       if (mountedRef.current) requestAnimationFrame(processFrame);
     };
-    processFrame();
+    requestAnimationFrame(processFrame);
   }, [
     token, user, active_student_id, activeSession,
     loadFaceMeshScript, analyzeLandmarks, captureFrameWithMesh, drawFaceMesh,
