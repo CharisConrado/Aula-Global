@@ -72,6 +72,7 @@ export default function EmotionDetector({ active = false }: Props) {
   const currentEmotionRef     = useRef<string>("neutro"); // sin stale-closure en captureFrame
   const currentAttentionRef   = useRef<number>(0.5);      // idem para atención
   const clickTimestampsRef    = useRef<number[]>([]);
+  const lastLandmarkTimeRef   = useRef<number>(0);        // ts del último onResults con cara detectada
   const mountedRef            = useRef(false);
 
   // ── Estado UI ───────────────────────────────────────────────────────────────
@@ -168,17 +169,22 @@ export default function EmotionDetector({ active = false }: Props) {
     const headZ = Math.abs(lm[1].z);
 
     // ── Clasificación ─────────────────────────────────────────────────────────
-    // ORDEN IMPORTA: las emociones negativas tienen prioridad sobre "feliz"
-    // para evitar falsos positivos cuando la cara neutra tiene comisuras
-    // ligeramente curvadas (rasgo facial natural frecuente en niños).
+    // ORDEN IMPORTA: emociones negativas antes de "feliz".
+    // Umbrales conservadores para evitar falsos positivos por variación
+    // facial natural (cejas juntas, leve movimiento de cabeza, etc.).
     let emotion = "neutro";
-    if      (browFurrow < 0.80  && mar < 0.05 && browRaise < 0.18) emotion = "frustrado";
-    else if (ear > 0.38         && browRaise > 0.22)               emotion = "ansioso";
-    else if (browFurrow < 0.88  && headZ > 0.06)                   emotion = "estresado";
-    else if (gazeDeviation > 0.18)                                  emotion = "distraido";
-    // "feliz" requiere sonrisa clara (umbral alto) + cejas no fruncidas
+    // Frustración: cejas MUY juntas + boca muy cerrada + cejas bajas
+    if      (browFurrow < 0.72  && mar < 0.03 && browRaise < 0.15) emotion = "frustrado";
+    // Ansiedad: ojos muy abiertos + cejas bien levantadas
+    else if (ear > 0.42         && browRaise > 0.28)               emotion = "ansioso";
+    // Estrés: cejas bastante juntas + movimiento de cabeza notable
+    else if (browFurrow < 0.76  && headZ > 0.12)                   emotion = "estresado";
+    // Distracción: desvío de mirada pronunciado
+    else if (gazeDeviation > 0.24)                                  emotion = "distraido";
+    // Felicidad: sonrisa clara + cejas no fruncidas
     else if (smileScore > 0.14  && mar < 0.30 && browFurrow > 0.85) emotion = "feliz";
-    else if (ear > 0.15 && ear < 0.30 && gazeDeviation < 0.10)     emotion = "calmado";
+    // Calma: ojos en rango normal + mirando a cámara
+    else if (ear > 0.15 && ear < 0.32 && gazeDeviation < 0.12)     emotion = "calmado";
 
     // ── Nivel de atención (0-1) ───────────────────────────────────────────────
     const attnGaze = Math.max(0, 1 - gazeDeviation * 3.5);
@@ -234,7 +240,9 @@ export default function EmotionDetector({ active = false }: Props) {
     const W = canvas.width, H = canvas.height;
     ctx.drawImage(video, 0, 0, W, H);
     const lm = lastLandmarksRef.current;
-    if (lm && lm.length >= 468) {
+    // Solo dibujar malla si los landmarks son recientes (< 600 ms)
+    const freshMesh = Date.now() - lastLandmarkTimeRef.current < 600;
+    if (lm && lm.length >= 468 && freshMesh) {
       drawFaceMesh(ctx, lm, W, H);
       // Etiqueta de emoción sobre el frame enviado al tutor
       ctx.fillStyle = "rgba(0,0,0,0.60)";
@@ -373,7 +381,8 @@ export default function EmotionDetector({ active = false }: Props) {
           ctx.clearRect(0, 0, oCanvas.width, oCanvas.height);
           ctx.drawImage(vid, 0, 0, oCanvas.width, oCanvas.height);
           const lm = lastLandmarksRef.current;
-          if (lm && lm.length >= 468) drawFaceMesh(ctx, lm, oCanvas.width, oCanvas.height);
+          const freshMesh = Date.now() - lastLandmarkTimeRef.current < 600;
+          if (lm && lm.length >= 468 && freshMesh) drawFaceMesh(ctx, lm, oCanvas.width, oCanvas.height);
         }
       }
       overlayRafRef.current = requestAnimationFrame(drawLoop);
@@ -460,15 +469,28 @@ export default function EmotionDetector({ active = false }: Props) {
       multiFaceLandmarks?: { x: number; y: number; z: number }[][];
     }) => {
       if (!mountedRef.current) return;
-      lastLandmarksRef.current = results.multiFaceLandmarks?.[0] ?? null;
+      const detected = results.multiFaceLandmarks?.[0] ?? null;
+      lastLandmarksRef.current = detected;
+      // Solo refrescar el timestamp cuando realmente se detecta una cara;
+      // si detected es null (sin cara en frame) el timestamp queda viejo
+      // y el chequeo de frescura desactiva la malla automáticamente.
+      if (detected) lastLandmarkTimeRef.current = Date.now();
     });
 
     faceMeshRef.current = faceMesh;
     const processFrame = async () => {
       if (!mountedRef.current) return;
-      if (videoRef.current && faceMeshRef.current)
-        // @ts-expect-error — tipo externo
-        await faceMeshRef.current.send({ image: videoRef.current });
+      try {
+        // Enviar frame solo si el video está decodificado y listo
+        if (videoRef.current && faceMeshRef.current && videoRef.current.readyState >= 2)
+          // @ts-expect-error — tipo externo
+          await faceMeshRef.current.send({ image: videoRef.current });
+      } catch {
+        // Ignorar errores de frame individuales (ruido, video no listo, etc.)
+        // para que el loop NUNCA muera y la malla no quede congelada.
+      }
+      // requestAnimationFrame va SIEMPRE aquí, fuera del try-catch,
+      // así el loop continúa incluso si el frame anterior falló.
       if (mountedRef.current) requestAnimationFrame(processFrame);
     };
     processFrame();
