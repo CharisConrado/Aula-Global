@@ -129,17 +129,23 @@ export default function EstudiantePage() {
         });
       }
 
-      // Cargar consultas asistidas activas para este estudiante
-      try {
-        const cons = await api.getStudentAssistedSessions(token, active_student_id);
-        setConsultas(cons.filter(c => !["finalizada", "rechazada"].includes(c.status)));
-      } catch {}
     } catch (err) {
       console.error("Error cargando datos del estudiante:", err);
     } finally {
       setLoading(false);
     }
   }, [token, active_student_id, activeSession, setActiveSession]);
+
+  /* ── Carga de consultas asistidas (independiente) ── */
+  useEffect(() => {
+    if (!token || !active_student_id) return;
+    api.getStudentAssistedSessions(token, active_student_id)
+      .then(cons => {
+        console.log("[consultas] recibidas:", cons);
+        setConsultas(cons.filter(c => !["finalizada", "rechazada"].includes(c.status)));
+      })
+      .catch(err => console.error("[consultas] error al cargar:", err));
+  }, [token, active_student_id]);
 
   useEffect(() => {
     if (!_hasHydrated) return;
