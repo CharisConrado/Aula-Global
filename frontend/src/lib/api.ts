@@ -275,6 +275,9 @@ export const api = {
   getActivity: (token: string, id: string) =>
     apiFetch<ActivityResponse>(`/api/activities/${id}`, { token }),
 
+  deleteActivity: (token: string, id: string) =>
+    apiFetch<void>(`/api/activities/${id}`, { method: "DELETE", token }),
+
   getDegrees: () => apiFetch<DegreeResponse[]>("/api/activities/degrees"),
 
   getSubjects: (params?: Record<string, string>) => {

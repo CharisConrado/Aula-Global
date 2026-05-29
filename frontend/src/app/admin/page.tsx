@@ -314,10 +314,12 @@ export default function AdminPage() {
   const [degrees, setDegrees] = useState<DegreeLocal[]>([]);
 
   /* ── Tab: actividades ── */
-  const [activityTypes, setActivityTypes] = useState<ActivityTypeLocal[]>([]);
-  const [activities, setActivities] = useState<
+  const [activityTypes,   setActivityTypes]   = useState<ActivityTypeLocal[]>([]);
+  const [activities,      setActivities]      = useState<
     { id_activity: string; title: string; difficulty_level: string; id_subject: string; activity_type?: string }[]
   >([]);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId,      setDeletingId]      = useState<string | null>(null);
 
   /* ── Tab: tutores ── */
   const [tutors, setTutors] = useState<TutorResponse[]>([]);
@@ -701,6 +703,21 @@ export default function AdminPage() {
     );
   }
 
+  const handleDeleteActivity = async (id: string) => {
+    if (!token) return;
+    setDeletingId(id);
+    try {
+      await api.deleteActivity(token, id);
+      setActivities(prev => prev.filter(a => a.id_activity !== id));
+      setConfirmDeleteId(null);
+    } catch {
+      // Si falla, simplemente cerramos el estado de confirmación
+      setConfirmDeleteId(null);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const navItems: { id: NavTab; label: string; icon: React.ReactNode }[] = [
     { id: "reportes",      label: "Reportes",        icon: <BarChart3 className="w-5 h-5" /> },
     { id: "actividades",   label: "Actividades",     icon: <BookOpen className="w-5 h-5" /> },
@@ -939,30 +956,82 @@ export default function AdminPage() {
                         );
                       }
                       return (
+                        <AnimatePresence>
                         <div className="space-y-3">
                           {filtered.map((act, i) => {
                             const sub = subjects.find((s) => s.id_subject === act.id_subject);
                             const deg = sub ? degrees.find((d) => d.id_degree === sub.id_degree) : null;
                             const diff = difficultyBadge(act.difficulty_level);
+                            const isConfirming = confirmDeleteId === act.id_activity;
+                            const isDeleting   = deletingId      === act.id_activity;
                             return (
                               <motion.div
                                 key={act.id_activity}
-                                initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
+                                initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20, scale: 0.95 }} transition={{ delay: i * 0.04 }}
                                 className="flex items-center gap-4 p-4 rounded-[1.25rem]"
-                                style={{ background: "white", border: "1.5px solid #D5DBDB", boxShadow: "0 2px 8px rgba(127,179,213,0.07)" }}
+                                style={{
+                                  background: isConfirming ? "#FFF1F2" : "white",
+                                  border: isConfirming ? "1.5px solid #FECDD3" : "1.5px solid #D5DBDB",
+                                  boxShadow: "0 2px 8px rgba(127,179,213,0.07)",
+                                  transition: "background 0.2s, border-color 0.2s",
+                                }}
                               >
-                                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: "#E1EFFF" }}>📖</div>
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: isConfirming ? "#FFE4E6" : "#E1EFFF" }}>
+                                  {isConfirming ? "🗑️" : "📖"}
+                                </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-bold truncate" style={{ color: "#34495E" }}>{act.title}</p>
+                                  <p className="text-sm font-bold truncate" style={{ color: isConfirming ? "#BE123C" : "#34495E" }}>{act.title}</p>
                                   <p className="text-xs truncate mt-0.5" style={{ color: "#a0aec0" }}>
-                                    {sub?.subject_name || "Materia desconocida"}{deg ? ` — ${deg.grade_name}` : ""}
+                                    {isConfirming
+                                      ? "¿Confirmas que deseas eliminar esta actividad?"
+                                      : `${sub?.subject_name || "Materia desconocida"}${deg ? ` — ${deg.grade_name}` : ""}`}
                                   </p>
                                 </div>
-                                <span className="text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0" style={{ background: diff.bg, color: diff.color }}>{diff.label}</span>
+
+                                {isConfirming ? (
+                                  /* Botones confirmar / cancelar */
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    <button
+                                      onClick={() => handleDeleteActivity(act.id_activity)}
+                                      disabled={isDeleting}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all"
+                                      style={{ background: isDeleting ? "#F87171" : "#EF4444", opacity: isDeleting ? 0.7 : 1 }}
+                                    >
+                                      {isDeleting
+                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        : <Trash2 className="w-3.5 h-3.5" />}
+                                      {isDeleting ? "Eliminando…" : "Sí, eliminar"}
+                                    </button>
+                                    <button
+                                      onClick={() => setConfirmDeleteId(null)}
+                                      disabled={isDeleting}
+                                      className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors"
+                                      style={{ background: "#f3f4f6", color: "#6B7280" }}
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </div>
+                                ) : (
+                                  /* Badge de dificultad + botón borrar */
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: diff.bg, color: diff.color }}>{diff.label}</span>
+                                    <button
+                                      onClick={() => setConfirmDeleteId(act.id_activity)}
+                                      className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors"
+                                      style={{ color: "#F87171" }}
+                                      onMouseEnter={e => { e.currentTarget.style.background = "#FFF1F2"; }}
+                                      onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+                                      title="Eliminar actividad"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                )}
                               </motion.div>
                             );
                           })}
                         </div>
+                        </AnimatePresence>
                       );
                     })()}
                   </div>
