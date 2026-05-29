@@ -129,10 +129,15 @@ export default function EstudiantePage() {
         });
       }
 
-      // Cargar consultas asistidas activas
+      // Cargar consultas asistidas activas para este estudiante
       try {
         const cons = await api.getAssistedSessions(token);
-        setConsultas(cons.filter(c => !["finalizada", "rechazada"].includes(c.status)));
+        setConsultas(
+          cons.filter(c =>
+            !["finalizada", "rechazada"].includes(c.status) &&
+            c.id_student === active_student_id
+          )
+        );
       } catch {}
     } catch (err) {
       console.error("Error cargando datos del estudiante:", err);
@@ -384,6 +389,113 @@ export default function EstudiantePage() {
 
         {/* Main */}
         <main className="flex-1 px-4 md:px-8 py-4 md:py-8">
+
+          {/* ══ CONSULTAS ACTIVAS — siempre visibles ══ */}
+          <AnimatePresence>
+            {consultas.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="mb-5 space-y-3"
+              >
+                {consultas.map((c, i) => (
+                  <motion.div
+                    key={c.id_sesion_asistida}
+                    initial={{ opacity: 0, scale: 0.97 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: i * 0.06 }}
+                    className="rounded-2xl p-4"
+                    style={{
+                      background: c.meeting_link
+                        ? "linear-gradient(135deg,#EFF6FF,#E1EFFF)"
+                        : "linear-gradient(135deg,#F0FDF4,#ECFDF5)",
+                      border: c.meeting_link ? "2px solid #93C5FD" : "2px solid #86EFAC",
+                      boxShadow: c.meeting_link
+                        ? "0 4px 20px rgba(59,130,246,0.15)"
+                        : "0 4px 20px rgba(34,197,94,0.12)",
+                    }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div
+                        className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 text-2xl"
+                        style={{ background: c.meeting_link ? "#DBEAFE" : "#D1FAE5" }}
+                      >
+                        🩺
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-extrabold text-sm leading-tight" style={{ color: "#1D4ED8" }}>
+                          Tienes una consulta
+                        </p>
+                        <p className="text-sm font-semibold" style={{ color: "#374151" }}>
+                          {c.professional_name || "Tu especialista"}
+                          {c.professional_speciality ? ` · ${c.professional_speciality}` : ""}
+                        </p>
+
+                        {/* Horario */}
+                        {c.scheduled_at && (
+                          <div className="mt-2 flex items-center gap-1.5">
+                            <span>📅</span>
+                            <p className="text-xs font-semibold" style={{ color: "#374151" }}>
+                              {new Date(c.scheduled_at).toLocaleDateString("es-CO", {
+                                weekday: "long", day: "numeric", month: "long",
+                                hour: "2-digit", minute: "2-digit",
+                              })}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Indicaciones del profesional */}
+                        {c.professional_notes && (
+                          <div className="mt-2 rounded-xl px-3 py-2"
+                            style={{ background: "rgba(255,255,255,0.75)", border: "1px solid #BBF7D0" }}>
+                            <p className="text-[10px] font-extrabold mb-0.5" style={{ color: "#15803D" }}>
+                              📋 Indicaciones de tu especialista:
+                            </p>
+                            <p className="text-xs" style={{ color: "#374151" }}>
+                              {c.professional_notes}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Notas del tutor */}
+                        {c.notes && (
+                          <p className="mt-2 text-xs rounded-lg px-2 py-1"
+                            style={{ background: "rgba(255,251,235,0.85)", color: "#D97706", border: "1px solid #FCD34D" }}>
+                            📝 {c.notes}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Botón de unirse */}
+                    {c.meeting_link ? (
+                      <a
+                        href={c.meeting_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-extrabold text-white transition-all active:scale-95"
+                        style={{ background: "linear-gradient(135deg,#3B82F6,#1D4ED8)", boxShadow: "0 6px 18px rgba(59,130,246,0.45)" }}
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        ¡Unirse a la consulta! 🎉
+                      </a>
+                    ) : (
+                      <div className="mt-3 py-2.5 rounded-xl text-center"
+                        style={{ background: "rgba(255,255,255,0.6)" }}>
+                        <p className="text-xs font-semibold" style={{ color: "#15803D" }}>
+                          {c.status === "pendiente"
+                            ? "⏳ Esperando confirmación del especialista…"
+                            : "✅ Confirmada · El especialista enviará el enlace pronto"}
+                        </p>
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <AnimatePresence mode="wait">
 
             {/* ══ VISTA: Todas las materias ══ */}
@@ -395,104 +507,6 @@ export default function EstudiantePage() {
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.25 }}
               >
-
-                {/* ── Consultas activas ── */}
-                {consultas.length > 0 && (
-                  <div className="mb-6 space-y-3">
-                    {consultas.map((c, i) => (
-                      <motion.div
-                        key={c.id_sesion_asistida}
-                        initial={{ opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.06 }}
-                        className="rounded-2xl p-4"
-                        style={{
-                          background: c.meeting_link
-                            ? "linear-gradient(135deg,#EFF6FF,#E1EFFF)"
-                            : "linear-gradient(135deg,#F0FDF4,#ECFDF5)",
-                          border: c.meeting_link ? "1.5px solid #93C5FD" : "1.5px solid #86EFAC",
-                          boxShadow: "0 2px 12px rgba(127,179,213,0.10)",
-                        }}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div
-                            className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 text-xl"
-                            style={{ background: c.meeting_link ? "#DBEAFE" : "#D1FAE5" }}
-                          >
-                            🩺
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-extrabold text-sm" style={{ color: "#1D4ED8" }}>
-                              Consulta con {c.professional_name || "tu especialista"}
-                            </p>
-                            <p className="text-xs" style={{ color: "#6B7280" }}>
-                              {c.professional_speciality || "Especialista"}
-                            </p>
-
-                            {/* Horario */}
-                            {c.scheduled_at && (
-                              <div className="mt-2 flex items-center gap-1.5">
-                                <span className="text-sm">📅</span>
-                                <p className="text-xs font-semibold" style={{ color: "#374151" }}>
-                                  {new Date(c.scheduled_at).toLocaleDateString("es-CO", {
-                                    weekday: "long", day: "numeric", month: "long",
-                                    hour: "2-digit", minute: "2-digit",
-                                  })}
-                                </p>
-                              </div>
-                            )}
-
-                            {/* Indicaciones del profesional */}
-                            {c.professional_notes && (
-                              <div className="mt-2 rounded-xl px-3 py-2"
-                                style={{ background: "rgba(255,255,255,0.7)", border: "1px solid #BBF7D0" }}>
-                                <p className="text-[10px] font-bold mb-0.5" style={{ color: "#15803D" }}>
-                                  📋 Indicaciones de tu especialista
-                                </p>
-                                <p className="text-xs" style={{ color: "#374151" }}>
-                                  {c.professional_notes}
-                                </p>
-                              </div>
-                            )}
-
-                            {/* Notas del tutor */}
-                            {c.notes && (
-                              <p className="mt-2 text-xs rounded-lg px-2 py-1"
-                                style={{ background: "rgba(255,251,235,0.8)", color: "#D97706", border: "1px solid #FCD34D" }}>
-                                📝 {c.notes}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Botón de unirse si hay link */}
-                        {c.meeting_link && (
-                          <a
-                            href={c.meeting_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-3 w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-extrabold text-white transition-all"
-                            style={{ background: "linear-gradient(135deg,#3B82F6,#1D4ED8)", boxShadow: "0 4px 14px rgba(59,130,246,0.40)" }}
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                            ¡Unirse a la consulta! 🎉
-                          </a>
-                        )}
-
-                        {/* Estado si aún no hay link */}
-                        {!c.meeting_link && (
-                          <div className="mt-3 text-center">
-                            <p className="text-xs font-semibold" style={{ color: "#15803D" }}>
-                              {c.status === "pendiente"
-                                ? "⏳ Esperando confirmación del especialista…"
-                                : "✅ Aceptada · Pronto recibirás el enlace de la reunión"}
-                            </p>
-                          </div>
-                        )}
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
 
                 {/* Trofeo si completó algo */}
                 {totalCompleted > 0 && (
