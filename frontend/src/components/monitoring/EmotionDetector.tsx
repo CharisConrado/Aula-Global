@@ -168,12 +168,16 @@ export default function EmotionDetector({ active = false }: Props) {
     const headZ = Math.abs(lm[1].z);
 
     // ── Clasificación ─────────────────────────────────────────────────────────
+    // ORDEN IMPORTA: las emociones negativas tienen prioridad sobre "feliz"
+    // para evitar falsos positivos cuando la cara neutra tiene comisuras
+    // ligeramente curvadas (rasgo facial natural frecuente en niños).
     let emotion = "neutro";
-    if      (smileScore > 0.06  && mar < 0.30)                     emotion = "feliz";
-    else if (browFurrow < 0.80  && mar < 0.05 && browRaise < 0.18) emotion = "frustrado";
+    if      (browFurrow < 0.80  && mar < 0.05 && browRaise < 0.18) emotion = "frustrado";
     else if (ear > 0.38         && browRaise > 0.22)               emotion = "ansioso";
     else if (browFurrow < 0.88  && headZ > 0.06)                   emotion = "estresado";
     else if (gazeDeviation > 0.18)                                  emotion = "distraido";
+    // "feliz" requiere sonrisa clara (umbral alto) + cejas no fruncidas
+    else if (smileScore > 0.14  && mar < 0.30 && browFurrow > 0.85) emotion = "feliz";
     else if (ear > 0.15 && ear < 0.30 && gazeDeviation < 0.10)     emotion = "calmado";
 
     // ── Nivel de atención (0-1) ───────────────────────────────────────────────
@@ -384,10 +388,15 @@ export default function EmotionDetector({ active = false }: Props) {
       const lm = lastLandmarksRef.current;
       if (!lm) return;
       const raw = analyzeLandmarks(lm);
-      emotionBufferRef.current = [...emotionBufferRef.current.slice(-6), raw.emotion];
+      // Buffer de 12 lecturas = 6 s de inercia temporal (antes eran 7 = 3.5 s)
+      emotionBufferRef.current = [...emotionBufferRef.current.slice(-11), raw.emotion];
       const counts: Record<string, number> = {};
       emotionBufferRef.current.forEach(e => { counts[e] = (counts[e] || 0) + 1; });
-      const smoothed = Object.entries(counts).sort(([, a], [, b]) => b - a)[0][0];
+      const total = emotionBufferRef.current.length;
+      const [topEmotion, topCount] = Object.entries(counts).sort(([, a], [, b]) => b - a)[0];
+      // Requiere al menos 35 % de dominancia para confirmar la emoción;
+      // si hay empate o ambigüedad, se mantiene en "neutro"
+      const smoothed = topCount / total >= 0.35 ? topEmotion : "neutro";
       currentEmotionRef.current   = smoothed;
       currentAttentionRef.current = raw.attention_level;
       setCurrentEmotion(smoothed);
