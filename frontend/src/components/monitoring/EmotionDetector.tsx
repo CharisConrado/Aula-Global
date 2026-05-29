@@ -240,8 +240,10 @@ export default function EmotionDetector({ active = false }: Props) {
     const W = canvas.width, H = canvas.height;
     ctx.drawImage(video, 0, 0, W, H);
     const lm = lastLandmarksRef.current;
-    // Solo dibujar malla si los landmarks son recientes (< 600 ms)
-    const freshMesh = Date.now() - lastLandmarkTimeRef.current < 600;
+    // Solo dibujar malla si los landmarks son recientes (< 1500 ms).
+    // 1.5 s tolera detecciones intermitentes por pose difícil sin volver
+    // al bug de malla congelada (loop muerto → stale > 1.5 s).
+    const freshMesh = Date.now() - lastLandmarkTimeRef.current < 1500;
     if (lm && lm.length >= 468 && freshMesh) {
       drawFaceMesh(ctx, lm, W, H);
       // Etiqueta de emoción sobre el frame enviado al tutor
@@ -381,7 +383,7 @@ export default function EmotionDetector({ active = false }: Props) {
           ctx.clearRect(0, 0, oCanvas.width, oCanvas.height);
           ctx.drawImage(vid, 0, 0, oCanvas.width, oCanvas.height);
           const lm = lastLandmarksRef.current;
-          const freshMesh = Date.now() - lastLandmarkTimeRef.current < 600;
+          const freshMesh = Date.now() - lastLandmarkTimeRef.current < 1500;
           if (lm && lm.length >= 468 && freshMesh) drawFaceMesh(ctx, lm, oCanvas.width, oCanvas.height);
         }
       }
